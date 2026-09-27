@@ -11,16 +11,13 @@ namespace
 		std::uint32_t timerChance{ 50 };
 		std::uint32_t combatChance{ 5 };
 		float         maxDistance{ 4000.0f };
-		std::string   soundPath{ "Sound\\FX\\LydiaHuh\\huh.wav" };
-		float         volume{ 1.0f };
+		std::string   line{ "Huh?" };
 		std::uint32_t notification{ 2 };
 	};
 
-	Settings           settings;
-	bool               soundExists{ false };
-	std::uint32_t      elapsedSeconds{ 0 };  // main thread only
-	RE::BSSoundHandle  lastHuh;              // main thread only
-	std::atomic<bool>  lydiaInCombat{ false };
+	Settings          settings;
+	std::uint32_t     elapsedSeconds{ 0 };  // main thread only
+	std::atomic<bool> lydiaInCombat{ false };
 
 	void InitializeLogging()
 	{
@@ -50,22 +47,33 @@ namespace
 		settings.timerChance = std::min(100u, getInt("TimerChance", settings.timerChance));
 		settings.combatChance = std::min(100u, getInt("CombatChance", settings.combatChance));
 		settings.maxDistance = static_cast<float>(getInt("MaxDistance", 4000));
-		settings.volume = static_cast<float>(std::min(100u, getInt("Volume", 100))) / 100.0f;
 		settings.notification = getInt("Notification", settings.notification);
 
-		char buf[MAX_PATH]{};
-		GetPrivateProfileStringA(sec, "SoundPath", settings.soundPath.c_str(), buf, sizeof(buf), ini);
-		settings.soundPath = buf;
+		char buf[256]{};
+		GetPrivateProfileStringA(sec, "Line", settings.line.c_str(), buf, sizeof(buf), ini);
+		settings.line = buf;
 
-		logger::info("Settings: every {}s @ {}%, combat @ {}%, maxDistance {}, sound '{}', volume {}, notification {}",
+		logger::info("Settings: every {}s @ {}%, combat @ {}%, maxDistance {}, line '{}', notification {}",
 			settings.timerIntervalSeconds, settings.timerChance, settings.combatChance,
-			settings.maxDistance, settings.soundPath, settings.volume, settings.notification);
+			settings.maxDistance, settings.line, settings.notification);
 	}
 
 	bool Roll(std::uint32_t a_percent)
 	{
 		thread_local std::mt19937 rng{ std::random_device{}() };
 		return std::uniform_int_distribution<std::uint32_t>{ 0, 99 }(rng) < a_percent;
+	}
+
+	// "Huh?" -> "huh", so punctuation and case don't matter when matching lines
+	std::string Normalize(std::string_view a_text)
+	{
+		std::string out;
+		for (const char c : a_text) {
+			if (std::isalpha(static_cast<unsigned char>(c))) {
+				out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			}
+		}
+		return out;
 	}
 
 	RE::Actor* GetLydiaIfNearby()
@@ -82,6 +90,153 @@ namespace
 		return lydia;
 	}
 
+	// Vanilla generic dialogue lines (e.g. what she says when you bump into her) whose
+	// text is the configured line and whose conditions pass for Lydia, i.e. lines
+	// recorded in her own voice. Found by text at runtime, so no form IDs are hardcoded.
+	std::vector<RE::TESTopicInfo*> FindLines(RE::Actor* a_lydia)
+	{
+		std::vector<RE::TESTopicInfo*> found;
+		const auto  wanted = Normalize(settings.line);
+		auto*       player = RE::PlayerCharacter::GetSingleton();
+		auto*       data = RE::TESDataHandler::GetSingleton();
+		if (!data || wanted.empty()) {
+			return found;
+		}
+
+		for (auto* topic : data->GetFormArray<RE::TESTopic>()) {
+			if (!topic || !topic->ownerQuest || !topic->topicInfos ||
+				topic->data.subtype == RE::DIALOGUE_DATA::Subtype::kCustom ||
+				topic->data.subtype == RE::DIALOGUE_DATA::Subtype::kScene) {
+				continue;
+			}
+			for (std::uint32_t i = 0; i < topic->numTopicInfos; ++i) {
+				auto* info = topic->topicInfos[i];
+				if (!info || !info->objConditions(a_lydia, player)) {
+					continue;
+				}
+
+				RE::BSTSmartPointer<RE::DialogueItem> item{
+					new RE::DialogueItem(topic->ownerQuest, topic, info, a_lydia)
+				};
+				std::uint32_t count = 0;
+				bool          matches = false;
+				for (auto* response : item->responses) {
+					++count;
+					const char* text = response ? response->text.c_str() : nullptr;
+					matches = text && Normalize(text) == wanted;
+					if (matches) {
+						logger::info("Found line {:08X} in topic '{}' ({:08X}): '{}' -> {}",
+							info->GetFormID(), topic->GetFormEditorID(), topic->GetFormID(),
+							text, response->voice.c_str());
+					}
+				}
+				if (matches && count == 1) {
+					found.push_back(info);
+				}
+			}
+		}
+
+		logger::info("{} matching line(s) for Lydia", found.size());
+		return found;
+	}
+
+	// Papyrus' ObjectReference.Say() takes a whole topic and picks one of its lines.
+	// To get exactly our line, the topic is narrowed to just that line until Say()
+	// returns. Count and pointer are updated in an order that keeps any concurrent
+	// reader within bounds.
+	struct NarrowedTopic
+	{
+		std::mutex            lock;
+		RE::TESTopic*         topic{ nullptr };
+		RE::TESTopicInfo**    infos{ nullptr };
+		std::uint32_t         count{ 0 };
+		RE::TESTopicInfo*     single[1]{};
+		std::chrono::steady_clock::time_point since;
+
+		bool Narrow(RE::TESTopicInfo* a_info)
+		{
+			std::scoped_lock l{ lock };
+			if (topic) {
+				return false;
+			}
+			topic = a_info->parentTopic;
+			infos = topic->topicInfos;
+			count = topic->numTopicInfos;
+			single[0] = a_info;
+			since = std::chrono::steady_clock::now();
+			topic->numTopicInfos = 1;
+			topic->topicInfos = single;
+			return true;
+		}
+
+		void Restore()
+		{
+			std::scoped_lock l{ lock };
+			if (!topic) {
+				return;
+			}
+			topic->topicInfos = infos;
+			topic->numTopicInfos = count;
+			topic = nullptr;
+		}
+
+		void RestoreIfStale()
+		{
+			bool stale;
+			{
+				std::scoped_lock l{ lock };
+				stale = topic && std::chrono::steady_clock::now() - since > 5s;
+			}
+			if (stale) {
+				logger::warn("Say() never returned; restoring topic");
+				Restore();
+			}
+		}
+	};
+
+	NarrowedTopic narrowed;
+
+	class RestoreOnReturn : public RE::BSScript::IStackCallbackFunctor
+	{
+	public:
+		void operator()(RE::BSScript::Variable) override { narrowed.Restore(); }
+		void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
+	};
+
+	bool Say(RE::Actor* a_lydia, RE::TESTopicInfo* a_info)
+	{
+		auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+		auto* handles = vm ? vm->GetObjectHandlePolicy() : nullptr;
+		auto* binds = vm ? vm->GetObjectBindPolicy() : nullptr;
+		if (!handles || !binds) {
+			return false;
+		}
+
+		const auto handle = handles->GetHandleForObject(RE::Actor::FORMTYPE, a_lydia);
+		RE::BSTSmartPointer<RE::BSScript::Object> object;
+		if (!vm->FindBoundObject(handle, "Actor", object) && !vm->FindBoundObject(handle, "ObjectReference", object)) {
+			if (!vm->CreateObject("Actor", object) || !object) {
+				logger::warn("Could not create a script object for Lydia");
+				return false;
+			}
+			binds->BindObject(object, handle);
+		}
+
+		if (!narrowed.Narrow(a_info)) {
+			return false;  // previous line still in flight
+		}
+
+		auto* args = RE::MakeFunctionArguments(
+			static_cast<RE::TESTopic*>(a_info->parentTopic), static_cast<RE::Actor*>(nullptr), false);
+		RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback{ new RestoreOnReturn() };
+		if (!vm->DispatchMethodCall(object, "Say", args, callback)) {
+			logger::warn("Say() dispatch failed");
+			narrowed.Restore();
+			return false;
+		}
+		return true;
+	}
+
 	// Main thread only
 	void SayHuh(const char* a_reason)
 	{
@@ -89,46 +244,33 @@ namespace
 		if (!lydia) {
 			return;
 		}
-		if (lastHuh.IsValid() && lastHuh.IsPlaying()) {
-			return;
+
+		static std::vector<RE::TESTopicInfo*> lines;
+		static std::uint32_t                  searches = 0;
+		if (lines.empty() && searches < 3) {
+			++searches;
+			lines = FindLines(lydia);
 		}
 
 		logger::info("Huh? ({})", a_reason);
 
-		if (settings.notification == 1 || (settings.notification == 2 && !soundExists)) {
-			RE::SendHUDMessage::ShowHUDMessage("Lydia: Huh?");
-		}
-		if (!soundExists) {
-			return;
-		}
-
-		auto* audio = RE::BSAudioManager::GetSingleton();
-		if (!audio) {
-			return;
+		bool said = false;
+		if (!lines.empty()) {
+			thread_local std::mt19937 rng{ std::random_device{}() };
+			auto* info = lines[std::uniform_int_distribution<std::size_t>{ 0, lines.size() - 1 }(rng)];
+			said = Say(lydia, info);
 		}
 
-		RE::BSSoundHandle  handle;
-		RE::BSResource::ID id;
-		id.GenerateFromPath(settings.soundPath.c_str());
-		audio->GetSoundHandleByFile(handle, id, 0x1A, 128);
-		if (!handle.IsValid()) {
-			logger::warn("Could not build sound from '{}'", settings.soundPath);
-			return;
+		if (settings.notification == 1 || (settings.notification == 2 && !said)) {
+			RE::SendHUDMessage::ShowHUDMessage(("Lydia: " + settings.line).c_str());
 		}
-
-		handle.SetVolume(settings.volume);
-		auto* root = lydia->Get3D();
-		auto* head = root ? root->GetObjectByName(RE::BSFixedString{ "NPC Head [Head]" }) : nullptr;
-		if (auto* node = head ? head : root) {
-			handle.SetObjectToFollow(node);
-		}
-		handle.Play();
-		lastHuh = handle;
 	}
 
 	// Main thread, once per second of wall time
 	void Tick()
 	{
+		narrowed.RestoreIfStale();
+
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto* ui = RE::UI::GetSingleton();
 		if (!player || !player->GetParentCell() || !ui || ui->GameIsPaused()) {
@@ -185,10 +327,6 @@ namespace
 	{
 		switch (a_msg->type) {
 		case SKSE::MessagingInterface::kDataLoaded:
-			soundExists = RE::BSResourceNiBinaryStream{ settings.soundPath }.good();
-			if (!soundExists) {
-				logger::warn("Sound '{}' not found; Lydia will only say 'Huh?' as a notification", settings.soundPath);
-			}
 			RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(CombatSink::GetSingleton());
 			StartTimer();
 			break;

@@ -6,6 +6,9 @@
 #undef GetObject
 
 #include <atomic>
+#include <cctype>
+#include <mutex>
+#include <vector>
 #include <chrono>
 #include <random>
 #include <string>

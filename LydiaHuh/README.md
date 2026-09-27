@@ -5,8 +5,17 @@ A tiny SKSE plugin for Skyrim Special Edition / Anniversary Edition. Lydia somet
 - **50% chance every 10 minutes** of unpaused play (timer stops in menus)
 - **5% chance whenever she enters combat**
 
-She only says it when she's loaded, alive and within about 57 m of the player. No ESP, no scripts.
+She only says it when she's loaded, alive and within about 57 m of the player. No ESP, no scripts, no audio files.
 Only the vanilla Lydia (`000A2C8E`) is affected.
+
+## How she says it
+
+The line comes from the game itself. It's the same "Huh?" she says when you bump into her, in her own voice, with lip-sync and subtitles.
+When the mod first needs the line, it searches the vanilla generic dialogue for a line whose text is `Huh?` and whose conditions pass for Lydia.
+Nothing is hardcoded by form ID. It then has her say it through Papyrus' `ObjectReference.Say()`, narrowing that topic to just this line for the duration of the call.
+
+The log (`Documents/My Games/Skyrim Special Edition/SKSE/LydiaHuh.log`) lists every matching line it found and its voice file.
+If no line is found, "Lydia: Huh?" shows up as a notification instead.
 
 ## Requirements
 
@@ -20,26 +29,15 @@ It holds a single folder, `LydiaHuh/`, which you install as a mod with MO2/Vorte
 
 ```
 LydiaHuh/
-├── SKSE/Plugins/LydiaHuh.dll
-├── SKSE/Plugins/LydiaHuh.ini
-└── Sound/FX/LydiaHuh/huh.wav   <- you supply this
+└── SKSE/Plugins/
+    ├── LydiaHuh.dll
+    └── LydiaHuh.ini
 ```
-
-### The "Huh?" sound
-
-No audio ships with the mod. Put a PCM `.wav` at `Sound/FX/LydiaHuh/huh.wav`. It has to be there when the game starts.
-The sound plays from Lydia's head in 3D.
-
-To use a real Lydia line, extract one from `Skyrim - Voices_en0.bsa`
-(`sound/voice/skyrim.esm/femaleeventoned/`) and convert the `.fuz` to `.wav`
-(for example with Unfuzer, or `xWMAEncode` plus a WAV converter).
-
-With no `huh.wav`, "Lydia: Huh?" shows up as a notification in the top-left corner instead.
 
 ## Config
 
-`SKSE/Plugins/LydiaHuh.ini` sets the interval, both chances, the max distance, volume, sound path and notification mode.
-The log is written to `Documents/My Games/Skyrim Special Edition/SKSE/LydiaHuh.log`.
+`SKSE/Plugins/LydiaHuh.ini` sets the interval, both chances, the max distance, the notification mode, and `Line`.
+`Line` is the subtitle text to look for, so she can say another of her generic lines (e.g. `Line=What was that?`).
 
 ## Build
 
