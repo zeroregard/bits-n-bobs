@@ -1,0 +1,41 @@
+name: LydiaHuh
+
+on:
+  push:
+    paths:
+      - 'LydiaHuh/**'
+      - '.github/workflows/lydia-huh.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Build
+        working-directory: LydiaHuh
+        shell: pwsh
+        run: |
+          # CommonLib auto-downloads a prebuilt lib when GITHUB_ACTIONS is set, but that
+          # lib needs a newer MSVC than the runner has. Build it from source instead.
+          Remove-Item Env:GITHUB_ACTIONS
+          xmake f -m release -y
+          xmake -y
+
+      - name: Package mod folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item -Recurse LydiaHuh/dist package/LydiaHuh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LydiaHuh
+          path: package
