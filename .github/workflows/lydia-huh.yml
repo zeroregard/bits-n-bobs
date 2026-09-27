@@ -21,7 +21,11 @@ jobs:
 
       - name: Build
         working-directory: LydiaHuh
+        shell: pwsh
         run: |
+          # CommonLib auto-downloads a prebuilt lib when GITHUB_ACTIONS is set, but that
+          # lib needs a newer MSVC than the runner has. Build it from source instead.
+          Remove-Item Env:GITHUB_ACTIONS
           xmake f -m release -y
           xmake -y
 
