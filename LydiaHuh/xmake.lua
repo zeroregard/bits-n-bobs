@@ -12,9 +12,6 @@ add_rules("mode.debug", "mode.release")
 if is_mode("release") then
     set_optimize("fastest")
     set_symbols("debug")
-    set_runtimes("MT")
-else
-    set_runtimes("MTd")
 end
 
 add_defines("NOMINMAX")  -- CommonLib pulls in Windows.h
