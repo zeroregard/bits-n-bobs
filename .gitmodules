@@ -1,0 +1,3 @@
+[submodule "LydiaHuh/lib/commonlibsse-ng"]
+	path = LydiaHuh/lib/commonlibsse-ng
+	url = https://github.com/alandtse/CommonLibSSE-NG.git
