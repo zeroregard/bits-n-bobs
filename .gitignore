@@ -1,3 +1,7 @@
 # build scratch
 out/
 *.bsa
+__pycache__/
+plugin/obj/
+*.dll
+*.lib

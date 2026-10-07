@@ -1,94 +1,109 @@
-"""Patch SkyUI magicmenu AS2 sources: split Active Effects into sub-categories.
+"""Patch SkyUI 6.11 magicmenu.swf AS2 sources (only classes this SWF really owns).
 
-Design (all client-side AS2, no engine cooperation needed):
+Classifies each Active Effects entry into one of three sub-categories:
+  Temporal 1024  time-limited, or from an enchantment (worn items)
+  Harmful   512  the magic effect has the Detrimental flag
+  Perks    2048  everything else (abilities, perks, racials, blessings)
 
-  * Three new filter bits, 512/1024/2048. Magic categories use bits 0-8, so these
-    are free.
-  * FILTERFLAG_MAGIC_ALL is ~256 (= -257), i.e. "everything except active effects".
-    It must be widened to ~(256|512|1024|2048) = -3841, otherwise effects carrying
-    a new bit would leak into the All category.
-  * MagicDataSetter ORs the right bit onto each ICT_ACTIVE_EFFECT entry.
-      timeRemaining > 0            -> TIMED
-      otherwise                    -> PASSIVE
-      resistance Disease/Poison    -> HARMFUL (in addition; an effect can be both)
-  * SetCategoriesList appends three category entries after the engine's.
-    InvalidateListData auto-hides categories with no matching items, so they
-    disappear when empty rather than showing empty lists.
-  * The original Active Effects category keeps bit 256 and still lists everything.
+Source/flag data comes from the companion SKSE plugin (skse.plugins.AEC, see
+../plugin). The magic menu itself only receives an effect's name and type. If the
+plugin is missing it falls back to timed -> Temporal, otherwise Perks.
+
+Lessons baked in (see ../README.md):
+  * magicmenu.swf imports InventoryLists from skyui/inventorylists.swf, so the
+    category list itself is patched by patch_aec_lists.py, not here.
+  * itemcard.swf/bottombar.swf also define skyui.defines.Inventory and shadow it,
+    so bit values are literals.
+  * Entries are processed once and the engine refreshes them, so the result is
+    stored in entry.aecFlags and re-applied by the list code.
+  * Processing can be deferred while the list is suspended, so after processing
+    we ask InventoryLists.aecRecount() to re-evaluate which categories are empty.
 """
-import os, sys, re
-
-S = sys.argv[1] if len(sys.argv) > 1 else None
-if not S:
-    sys.exit("usage: patch_aec.py <scripts dir>")
-
+import os, sys
+S = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: patch_aec.py <scripts dir>")
 P = os.path.join(S, "__Packages")
 
-
 def edit(path, old, new, why, sentinel):
-    """sentinel must be a string that appears ONLY after this patch is applied."""
-    full = os.path.join(P, path)
-    s = open(full, encoding="utf-8", errors="replace").read()
-    if sentinel in s:
-        print("  SKIP (already applied): %s" % why)
-        return
-    if old not in s:
-        raise SystemExit("ANCHOR NOT FOUND in %s for: %s" % (path, why))
-    s = s.replace(old, new, 1)
-    open(full, "w", encoding="utf-8").write(s)
-    after = open(full, encoding="utf-8", errors="replace").read()
-    if sentinel not in after:
-        raise SystemExit("PATCH DID NOT LAND in %s for: %s" % (path, why))
-    print("  patched %-28s %s" % (path, why))
+    full = os.path.join(P, path); s = open(full, encoding="utf-8").read()
+    if sentinel in s: print("  SKIP (already applied): %s" % why); return
+    if s.count(old) != 1: raise SystemExit("ANCHOR NOT FOUND/UNIQUE in %s for: %s" % (path, why))
+    open(full, "w", encoding="utf-8").write(s.replace(old, new, 1)); print("  patched %-22s %s" % (path, why))
 
-
-# ---------------------------------------------------------------- 1. constants
-edit("skyui/defines/Inventory.as",
-     "   static var FILTERFLAG_MAGIC_ALL = -257;",
-     "   static var AEC_FLAG_HARMFUL = 512;\n"
-     "   static var AEC_FLAG_TIMED = 1024;\n"
-     "   static var AEC_FLAG_PASSIVE = 2048;\n"
-     "   static var AEC_FLAG_MASK = 3840;\n"
-     "   static var FILTERFLAG_MAGIC_ALL = -3841;",
-     "new sub-category bits + widened ALL mask", "AEC_FLAG_HARMFUL = 512")
-
-# ------------------------------------------------------- 2. tag entries by kind
+# 1. classification
 edit("MagicDataSetter.as",
+     "         case skyui.defines.Inventory.ICT_ACTIVE_EFFECT:\n",
      "         case skyui.defines.Inventory.ICT_ACTIVE_EFFECT:\n"
-     "            if(a_itemInfo.timeRemaining != undefined && a_itemInfo.timeRemaining > 0)",
-     "         case skyui.defines.Inventory.ICT_ACTIVE_EFFECT:\n"
-     "            a_entryObject.filterFlag = a_entryObject.filterFlag | "
-     "(a_itemInfo.timeRemaining != undefined && a_itemInfo.timeRemaining > 0 "
-     "? skyui.defines.Inventory.AEC_FLAG_TIMED : skyui.defines.Inventory.AEC_FLAG_PASSIVE);\n"
-     "            if(a_entryObject.resistance == skyui.defines.Actor.AV_DISEASERESIST || "
-     "a_entryObject.resistance == skyui.defines.Actor.AV_POISONRESIST)\n"
+     "            var aecTimed = a_itemInfo.timeRemaining != undefined && a_itemInfo.timeRemaining > 0;\n"
+     "            var aecInfo = undefined;\n"
+     "            if(this.aecSrc != undefined)\n"
      "            {\n"
-     "               a_entryObject.filterFlag = a_entryObject.filterFlag | "
-     "skyui.defines.Inventory.AEC_FLAG_HARMFUL;\n"
+     "               aecInfo = this.aecSrc[\"k\" + a_entryObject.formId];\n"
+     "               if(aecInfo == undefined) { aecInfo = this.aecSrc[\"n\" + a_entryObject.text]; }\n"
      "            }\n"
-     "            if(a_itemInfo.timeRemaining != undefined && a_itemInfo.timeRemaining > 0)",
-     "tag active-effect entries with sub-category bits", "AEC_FLAG_TIMED :")
+     "            if(aecInfo != undefined && aecInfo.det)\n"
+     "            {\n"
+     "               a_entryObject.aecFlags = 512;\n"
+     "            }\n"
+     "            else if(aecTimed || aecInfo != undefined && aecInfo.ench)\n"
+     "            {\n"
+     "               a_entryObject.aecFlags = 1024;\n"
+     "            }\n"
+     "            else\n"
+     "            {\n"
+     "               a_entryObject.aecFlags = 2048;\n"
+     "            }\n"
+     "            a_entryObject.filterFlag = a_entryObject.filterFlag | a_entryObject.aecFlags;\n",
+     "classify active effects (Temporal/Harmful/Perks)", "aecFlags = 512")
 
-# ------------------------------------------------------- 3. append categories
-edit("InventoryLists.as",
-     "      if(this._bTabbed)\n"
+# 2. fetch plugin data once per pass, then recount categories after (possibly deferred) processing
+edit("MagicDataSetter.as",
+     "   function processEntry(a_entryObject, a_itemInfo)",
+     "   function processList(a_list)\n"
+     "   {\n"
+     "      this.aecSrc = undefined;\n"
+     "      if(skse.plugins.AEC != undefined)\n"
      "      {\n"
-     "         this.categoryList.selectedIndex = 0;",
-     "      this.categoryList.entryList.push({text:\"Harmful\","
-     "flag:skyui.defines.Inventory.AEC_FLAG_HARMFUL,bDontHide:false,savedItemIndex:0,filterFlag:0});\n"
-     "      this.categoryList.entryList.push({text:\"Timed\","
-     "flag:skyui.defines.Inventory.AEC_FLAG_TIMED,bDontHide:false,savedItemIndex:0,filterFlag:0});\n"
-     "      this.categoryList.entryList.push({text:\"Passive\","
-     "flag:skyui.defines.Inventory.AEC_FLAG_PASSIVE,bDontHide:false,savedItemIndex:0,filterFlag:0});\n"
-     "      if(this._bTabbed)\n"
+     "         var aecArr = [];\n"
+     "         skse.plugins.AEC.GetEffectSources(aecArr);\n"
+     "         this.aecSrc = {};\n"
+     "         var aecI = 0;\n"
+     "         while(aecI < aecArr.length)\n"
+     "         {\n"
+     "            var aecE = aecArr[aecI];\n"
+     "            var aecDet = (aecE.effectFlags & 4) != 0;\n"
+     "            var aecEnch = aecE.itemType == 21;\n"
+     "            var aecKeys = [\"k\" + aecE.mgef, \"k\" + aecE.item, \"n\" + aecE.name];\n"
+     "            var aecJ = 0;\n"
+     "            while(aecJ < aecKeys.length)\n"
+     "            {\n"
+     "               var aecR = this.aecSrc[aecKeys[aecJ]];\n"
+     "               if(aecR == undefined) { aecR = {det:false,ench:false}; this.aecSrc[aecKeys[aecJ]] = aecR; }\n"
+     "               aecR.det = aecR.det || aecDet;\n"
+     "               aecR.ench = aecR.ench || aecEnch;\n"
+     "               aecJ = aecJ + 1;\n"
+     "            }\n"
+     "            aecI = aecI + 1;\n"
+     "         }\n"
+     "      }\n"
+     "      super.processList(a_list);\n"
+     "      var aecIL = a_list._parent._parent;\n"
+     "      if(aecIL.aecRecount != undefined)\n"
      "      {\n"
-     "         this.categoryList.selectedIndex = 0;",
-     "append the three sub-categories", "AEC_FLAG_HARMFUL,bDontHide")
+     "         aecIL.aecRecount();\n"
+     "      }\n"
+     "   }\n"
+     "   function processEntry(a_entryObject, a_itemInfo)",
+     "plugin lookup + recount after processing", "GetEffectSources")
 
-# ------------------------------------------------------------------- 4. icons
+# 3. new categories use the Active Effects column layout
+edit("MagicMenu.as",
+     "_loc5_.changeFilterFlag(this.inventoryLists.categoryList.selectedEntry.flag);",
+     "_loc5_.changeFilterFlag((this.inventoryLists.categoryList.selectedEntry.flag & 3584) != 0 ? 256 : this.inventoryLists.categoryList.selectedEntry.flag);",
+     "Active Effects columns for the new categories", "& 3584) != 0 ? 256")
+
+# 4. icons
 edit("MagicMenu.as",
      '"mag_powers","mag_activeeffects"];',
-     '"mag_powers","mag_activeeffects","mag_activeeffects","mag_activeeffects","mag_activeeffects"];',
-     "icon art for the new categories", '"mag_activeeffects","mag_activeeffects"')
-
+     '"mag_powers","aec_temporal","aec_harmful","aec_perks","mag_activeeffects"];',
+     "icon art for the new categories (frames added by patch_icons.py)", '"aec_temporal"')
 print("all patches applied")
