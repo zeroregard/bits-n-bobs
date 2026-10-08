@@ -146,8 +146,15 @@ ICON_FN = """   function aecPickIcon(a_e, r)
       else if(st == 2 || st == 3) { T = "Power"; }
       else if(st == 5) { T = "Poison"; }
       else if(st == 7) { T = "Shout"; }
-      else if(st == 4) { T = "Ability"; }
-      if(String(r.name).indexOf("Blessing") >= 0 || String(a_e.text).indexOf("Blessing") >= 0) { T = "Blessing"; }
+      else if(st == 4)
+      {
+         T = "Ability";
+         if(r.origin == 1) { T = "Race"; }
+         else if(r.origin == 2) { T = "Perk"; }
+         else if(String(r.itemName).indexOf("Stone") >= 0) { T = "Standing Stone"; }
+         else if((r.effectFlags & 5) != 0) { T = "Curse"; }
+      }
+      if(String(r.name).indexOf("Blessing") >= 0 || String(r.itemName).indexOf("Blessing") >= 0 || String(a_e.text).indexOf("Blessing") >= 0) { T = "Blessing"; }
       a_e.aecType = T;
       if(r.archetype == 46 || r.archetype == 36)
       {
@@ -188,8 +195,16 @@ ICON_FN = """   function aecPickIcon(a_e, r)
       }
       else if(st == 1)
       {
-         L = "potion_poison";
+         L = "aec_affliction";
          C = 7048739;
+      }
+      if(L == undefined)
+      {
+         if(T == "Curse") { L = "aec_affliction"; C = 10181046; }
+         else if(T == "Race") { L = "aec_race"; }
+         else if(T == "Perk") { L = "aec_perk"; }
+         else if(T == "Standing Stone") { L = "aec_stone"; }
+         else if(T == "Blessing") { L = "magic_sun"; C = 16746240; }
       }
       if(L == undefined)
       {

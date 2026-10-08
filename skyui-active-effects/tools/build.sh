@@ -24,8 +24,16 @@ $FFDEC -importScript "$MM" "$OUT/Interface/magicmenu.swf" "$W/mm_only" >/dev/nul
 $FFDEC -importScript "$IL" "$OUT/Interface/SkyUI/inventorylists.swf" "$W/il_only" >/dev/null 2>&1
 # tab icons: three new labelled frames in a copy of the category icon SWF
 ICO="$W/bsa/interface/skyui/icons_category_psychosteve.swf"; SVG="$T/../icons"
-python3 "$T/patch_icons.py" frames "$ICO" "$W/ico1.swf"
+TABS="mag_activeeffects aec_temporal:900 aec_harmful:902 aec_perks:904"
+python3 "$T/patch_icons.py" frames "$ICO" "$W/ico1.swf" $TABS
 $FFDEC -replace "$W/ico1.swf" "$W/ico2.swf" 900 "$SVG/effects_ongoing.svg" nofill \
   902 "$SVG/effects_harmful.svg" nofill 904 "$SVG/effects_boons.svg" nofill >/dev/null 2>&1
-python3 "$T/patch_icons.py" place "$W/ico2.swf" "$OUT/Interface/SkyUI/icons_category_psychosteve.swf"
-ls -l "$OUT/Interface/magicmenu.swf" "$OUT/Interface/SkyUI/inventorylists.swf" "$OUT/Interface/SkyUI/icons_category_psychosteve.swf"
+python3 "$T/patch_icons.py" place "$W/ico2.swf" "$OUT/Interface/SkyUI/icons_category_psychosteve.swf" $TABS
+# row icons: new frames in a copy of the item icon SWF
+ITM="$W/bsa/interface/skyui/icons_item_psychosteve.swf"
+ROWS="default_effect aec_affliction:900 aec_perk:902 aec_race:904 aec_stone:906"
+python3 "$T/patch_icons.py" frames "$ITM" "$W/itm1.swf" $ROWS
+$FFDEC -replace "$W/itm1.swf" "$W/itm2.swf" 900 "$SVG/aec_affliction.svg" nofill 902 "$SVG/aec_perk.svg" nofill \
+  904 "$SVG/aec_race.svg" nofill 906 "$SVG/aec_stone.svg" nofill >/dev/null 2>&1
+python3 "$T/patch_icons.py" place "$W/itm2.swf" "$OUT/Interface/SkyUI/icons_item_psychosteve.swf" $ROWS
+ls -l "$OUT/Interface/magicmenu.swf" "$OUT/Interface/SkyUI/inventorylists.swf" "$OUT/Interface/SkyUI/icons_category_psychosteve.swf" "$OUT/Interface/SkyUI/icons_item_psychosteve.swf"

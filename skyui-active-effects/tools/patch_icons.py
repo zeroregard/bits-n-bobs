@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Append AEC tab icons to a copy of SkyUI's category icon SWF.
+"""Append AEC icons to a copy of a SkyUI icon SWF (category tabs or item rows).
 
-  patch_icons.py frames  <in.swf> <out.swf>           add 3 labelled frames with placeholder shapes
-  patch_icons.py place   <in.swf> <out.swf>           position the (SVG-replaced) shapes to match mag_activeeffects
+  patch_icons.py frames <in.swf> <out.swf> <ref_label> <label:chid> ...   add labelled frames with placeholder shapes
+  patch_icons.py place  <in.swf> <out.swf> <ref_label> <label:chid> ...   position the (SVG-replaced) shapes to match ref_label
+
+Both SkyUI icon SWFs share one layout, so the same tool serves
+icons_category_psychosteve.swf (ref mag_activeeffects) and
+icons_item_psychosteve.swf (ref default_effect).
 
 Frames mirror SkyUI's layout: RemoveObject2(depth 4), FrameLabel, DefineShape,
 DefineSprite(wrapping the shape), PlaceObject2(sprite, depth 4), ShowFrame.
 """
 import sys, zlib, struct
 
-NEW = [("aec_temporal", 900), ("aec_harmful", 902), ("aec_perks", 904)]  # label, shape chid (sprite = +1)
-REF = "mag_activeeffects"
+NEW = []   # (label, shape chid); the wrapping sprite gets chid + 1
+REF = None
 
 class BR:
     def __init__(s, d, p): s.d = d; s.p = p * 8
@@ -127,4 +131,6 @@ def cmd_place(src, dst):
     save(dst, sig, d, he, tags)
 
 if __name__ == '__main__':
+    REF = sys.argv[4]
+    NEW = [(a.split(':')[0], int(a.split(':')[1])) for a in sys.argv[5:]]
     {'frames': cmd_frames, 'place': cmd_place}[sys.argv[1]](sys.argv[2], sys.argv[3])
