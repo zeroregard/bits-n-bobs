@@ -149,10 +149,13 @@ ICON_FN = """   function aecPickIcon(a_e, r)
       else if(st == 4)
       {
          T = "Ability";
-         if(r.origin == 1) { T = "Race"; }
-         else if(r.origin == 2) { T = "Perk"; }
-         else if(String(r.itemName).indexOf("Stone") >= 0) { T = "Standing Stone"; }
-         else if((r.effectFlags & 5) != 0) { T = "Curse"; }
+         var mn = String(r.modName).toLowerCase();
+         var nm = (String(r.itemName) + " " + String(r.name)).toLowerCase();
+         if((r.effectFlags & 5) != 0) { T = "Curse"; }
+         else if(r.perkCond == 1 || r.origin == 2) { T = "Perk"; }
+         else if(r.supernatural > 0 || mn.indexOf("undeath") >= 0 || nm.indexOf("vampir") >= 0 || nm.indexOf("werewolf") >= 0 || nm.indexOf("lycanthrop") >= 0 || nm.indexOf("lichdom") >= 0) { T = "Supernatural"; }
+         else if(r.origin == 1) { T = "Race"; }
+         else if(nm.indexOf("stone") >= 0) { T = "Standing Stone"; }
       }
       if(String(r.name).indexOf("Blessing") >= 0 || String(r.itemName).indexOf("Blessing") >= 0 || String(a_e.text).indexOf("Blessing") >= 0) { T = "Blessing"; }
       a_e.aecType = T;
@@ -205,6 +208,7 @@ ICON_FN = """   function aecPickIcon(a_e, r)
          else if(T == "Perk") { L = "aec_perk"; }
          else if(T == "Standing Stone") { L = "aec_stone"; }
          else if(T == "Blessing") { L = "magic_sun"; C = 16746240; }
+         else if(T == "Supernatural") { L = "magic_vampire"; C = 11546150; }
       }
       if(L == undefined)
       {

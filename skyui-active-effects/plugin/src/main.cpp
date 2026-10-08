@@ -34,8 +34,12 @@ static bool HasRTTIName(const void* obj, const char* name)
 	return std::strcmp((const char*)(base + col[3] + 0x10), name) == 0;
 }
 
-// Every spell that any perk grants as an ability. Built once, after the data has loaded.
+static bool HasKeyword(const BGSKeywordForm& kf, const char* name);
+
+// Every spell that any perk grants as an ability, and every spell some non-vampire race
+// carries (a vampire's race spells outside this set are vampirism). Built once.
 static std::unordered_set<UInt32> s_perkSpells;
+static std::unordered_set<UInt32> s_mortalRaceSpells;
 static bool s_perkSpellsBuilt = false;
 static void BuildPerkSpells()
 {
@@ -56,6 +60,58 @@ static void BuildPerkSpells()
 			}
 		}
 	}
+	for (UInt32 i = 0; i < dh->races.count; i++) {
+		TESRace* r = dh->races.entries[i];
+		if (!r || HasKeyword(r->keyword, "Vampire") || !r->spellList.data || !r->spellList.data->spells)
+			continue;
+		for (UInt32 j = 0; j < r->spellList.data->numSpells; j++)
+			if (r->spellList.data->spells[j])
+				s_mortalRaceSpells.insert(r->spellList.data->spells[j]->formID);
+	}
+}
+
+static const char* ModNameOf(UInt32 formID)
+{
+	DataHandler* dh = *s_dataHandler;
+	if (!dh)
+		return "";
+	tArray<ModInfo*>* lists[2] = { &dh->modList.loadedMods, &dh->modList.loadedCCMods };
+	for (auto* l : lists)
+		for (UInt32 i = 0; i < l->count; i++)
+			if (l->entries[i] && l->entries[i]->IsFormInMod(formID))
+				return l->entries[i]->name;
+	return "";
+}
+
+// Vanilla implements most perk boons as effects inside abilities every race carries
+// (PerkSkillBoosts, AlchemySkillBoosts...), each switched on by a HasPerk condition.
+// So an effect counts as a perk when its own conditions require a perk.
+static const UInt16 kFunction_HasPerk = 448;
+static bool PerkConditioned(const MagicItem::EffectItem* ei)
+{
+	const Condition* c = static_cast<const Condition*>(ei->unk20);
+	for (int guard = 0; c && guard < 64; guard++, c = c->next) {
+		if (c->functionId != kFunction_HasPerk || (c->comparisonType & Condition::kComparisonFlag_Global))
+			continue;
+		float v = *reinterpret_cast<const float*>(&c->compareValue);
+		UInt8 op = c->comparisonType & 0xE0;
+		if ((op == Condition::kComparisonFlag_Equal && v >= 1.0f) ||
+			(op == Condition::kComparisonFlag_NotEqual && v == 0.0f) ||
+			(op == Condition::kComparisonFlag_Greater && v < 1.0f) ||
+			(op == Condition::kComparisonFlag_GreaterEqual && v <= 1.0f && v > 0.0f))
+			return true;
+	}
+	return false;
+}
+
+static bool HasKeyword(const BGSKeywordForm& kf, const char* name)
+{
+	for (UInt32 i = 0; i < kf.numKeywords; i++) {
+		const BGSKeyword* k = kf.keywords ? kf.keywords[i] : nullptr;
+		if (k && k->keyword.data && _stricmp(k->keyword.data, name) == 0)
+			return true;
+	}
+	return false;
 }
 
 static bool ListHas(const TESSpellList& list, const MagicItem* item)
@@ -92,6 +148,7 @@ public:
 		SetNum(&obj, "sourceType", e->sourceItem ? e->sourceItem->formType : 0);
 		SetNum(&obj, "duration", e->duration);
 		SetNum(&obj, "inactive", (e->flags & ActiveEffect::kFlag_Inactive) ? 1 : 0);
+		SetNum(&obj, "perkCond", PerkConditioned(e->effect) ? 1 : 0);
 		// icon inputs; the menu decides the icon so the mapping can change without a restart
 		const auto& p = mgef->properties;
 		SetNum(&obj, "school", p.school);
@@ -116,6 +173,16 @@ public:
 					 ListHas(static_cast<TESActorBase*>(pc->baseForm)->spellList, e->item))
 				origin = 3;
 			SetNum(&obj, "origin", origin);
+			// 1 = vampire-only race spell, 2 = the player is in a creature form (werewolf, vampire lord)
+			UInt32 super = 0;
+			if (origin == 1 && HasKeyword(pc->race->keyword, "Vampire") && !s_mortalRaceSpells.count(e->item->formID))
+				super = 1;
+			else if (origin == 1 && HasKeyword(pc->race->keyword, "ActorTypeCreature"))
+				super = 2;
+			SetNum(&obj, "supernatural", super);
+			GFxValue mod;
+			view->CreateString(&mod, ModNameOf(e->item->formID));
+			obj.SetMember("modName", &mod);
 			GFxValue itemName;
 			const char* in = e->item->fullName.name.data;
 			view->CreateString(&itemName, in ? in : "");
@@ -162,7 +229,7 @@ extern "C" {
 __declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version =
 {
 	SKSEPluginVersionData::kVersion,
-	3,
+	4,
 	"ActiveEffectCategories",
 	"zeroregard",
 	"",
