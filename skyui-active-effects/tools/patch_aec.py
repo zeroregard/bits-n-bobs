@@ -130,6 +130,25 @@ ICON_FN = """   function aecPickIcon(a_e, r)
       var av = r.primaryAV;
       var st = r.spellType;
       var sl = r.slots;
+      var T = "";
+      if(r.itemType == 21 && (r.sourceType == 26 || r.sourceType == 41)) { T = "Equipped"; }
+      else if(r.itemType == 21) { T = "Enchantment"; }
+      else if(r.itemType == 46)
+      {
+         T = "Potion";
+         if((r.alchFlags & 131072) != 0) { T = "Poison"; }
+         else if((r.alchFlags & 2) != 0) { T = "Food"; }
+      }
+      else if(r.itemType == 30) { T = "Ingredient"; }
+      else if(r.itemType == 23) { T = "Scroll"; }
+      else if(st == 0) { T = "Spell"; }
+      else if(st == 1) { T = "Disease"; }
+      else if(st == 2 || st == 3) { T = "Power"; }
+      else if(st == 5) { T = "Poison"; }
+      else if(st == 7) { T = "Shout"; }
+      else if(st == 4) { T = "Ability"; }
+      if(String(r.name).indexOf("Blessing") >= 0 || String(a_e.text).indexOf("Blessing") >= 0) { T = "Blessing"; }
+      a_e.aecType = T;
       if(r.archetype == 46 || r.archetype == 36)
       {
          L = "magic_vampire";
@@ -199,7 +218,7 @@ ICON_FN = """   function aecPickIcon(a_e, r)
 edit("MagicDataSetter.as",
      "   function processList(a_list)\n",
      ICON_FN + "   function processList(a_list)\n",
-     "icon mapping (school / element / potion / worn slot / shout / disease)", "function aecPickIcon")
+     "icon + type mapping (school / element / potion / worn slot / shout / disease)", "function aecPickIcon")
 edit("MagicIconSetter.as",
      '            a_entryObject.iconLabel = "default_effect";\n',
      '            a_entryObject.iconLabel = a_entryObject.aecIcon != undefined ? a_entryObject.aecIcon : "default_effect";\n'
