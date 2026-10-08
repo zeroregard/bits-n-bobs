@@ -1,9 +1,9 @@
 """Patch SkyUI 6.11 magicmenu.swf AS2 sources (only classes this SWF really owns).
 
 Classifies each Active Effects entry into one of three sub-categories:
-  Temporal 1024  time-limited, or from an enchantment (worn items)
-  Harmful   512  the magic effect has the Detrimental flag
-  Perks    2048  everything else (abilities, perks, racials, blessings)
+  ONGOING EFFECTS 1024  time-limited, or from an enchantment (worn items)
+  HARMFUL EFFECTS  512  the magic effect is Hostile or Detrimental (timed or not)
+  BOON EFFECTS    2048  everything else (abilities, perks, racials, blessings)
 
 Source/flag data comes from the companion SKSE plugin (skse.plugins.AEC, see
 ../plugin). The magic menu itself only receives an effect's name and type. If the
@@ -70,7 +70,7 @@ edit("MagicDataSetter.as",
      "         while(aecI < aecArr.length)\n"
      "         {\n"
      "            var aecE = aecArr[aecI];\n"
-     "            var aecDet = (aecE.effectFlags & 4) != 0;\n"
+     "            var aecDet = (aecE.effectFlags & 5) != 0;\n"
      "            var aecEnch = aecE.itemType == 21;\n"
      "            var aecKeys = [\"k\" + aecE.mgef, \"k\" + aecE.item, \"n\" + aecE.name];\n"
      "            var aecJ = 0;\n"

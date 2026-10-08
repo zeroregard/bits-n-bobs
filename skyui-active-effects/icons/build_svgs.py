@@ -22,7 +22,7 @@ def D(a,b): return skia.Op(a,b,skia.PathOp.kDifference_PathOp)
 def circ(x,y,r): p=skia.Path(); p.addCircle(x,y,r); return p
 def rrect(x,y,w,h,r): p=skia.Path(); p.addRRect(skia.RRect.MakeRectXY(skia.Rect.MakeXYWH(x,y,w,h),r,r)); return p
 RING = 10      # shield wall thickness; outer edge stays where the original 6-wide stroke put it
-GLYPH = 0.8    # inner symbol scale, around the shield's centre
+GLYPH = 0.9    # inner symbol scale, around the shield's centre
 SP = P("M40 2 L76 12 V46 C76 70 60 86 40 96 C20 86 4 70 4 46 V12 Z")
 shield = D(U(SP, stroke(SP, 6)), D(SP, stroke(SP, 2 * (RING - 3))))
 hour = U(rrect(24,22,32,5,2), rrect(24,71,32,5,2),
