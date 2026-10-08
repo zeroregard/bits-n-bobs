@@ -1,7 +1,8 @@
 // ActiveEffectCategories - SKSE plugin
 // Exposes skse.plugins.AEC.GetEffectSources(array) to Scaleform. For every active
 // effect on the player it pushes an object describing where the effect comes from,
-// which the SkyUI magic menu patch uses to sort effects into Temporal / Harmful / Perks.
+// which the SkyUI magic menu patch uses to sort effects into ONGOING / HARMFUL / BOON EFFECTS
+// and to pick a per-effect icon.
 // The magic menu itself only receives an effect's name and type, not its source.
 #include "skse64_common/skse_version.h"
 #include "skse64_common/Relocation.h"
@@ -38,6 +39,19 @@ public:
 		SetNum(&obj, "sourceType", e->sourceItem ? e->sourceItem->formType : 0);
 		SetNum(&obj, "duration", e->duration);
 		SetNum(&obj, "inactive", (e->flags & ActiveEffect::kFlag_Inactive) ? 1 : 0);
+		// icon inputs; the menu decides the icon so the mapping can change without a restart
+		const auto& p = mgef->properties;
+		SetNum(&obj, "school", p.school);
+		SetNum(&obj, "resist", p.resistance);
+		SetNum(&obj, "primaryAV", p.primaryValue);
+		SetNum(&obj, "archetype", p.archetype);
+		SetNum(&obj, "delivery", p.deliveryType);
+		if (e->item && (e->item->formType == kFormType_Spell || e->item->formType == kFormType_ScrollItem))
+			SetNum(&obj, "spellType", static_cast<SpellItem*>(e->item)->data.type);
+		if (e->item && e->item->formType == kFormType_Potion)
+			SetNum(&obj, "alchFlags", static_cast<AlchemyItem*>(e->item)->itemData.flags);
+		if (e->sourceItem && e->sourceItem->formType == kFormType_Armor)
+			SetNum(&obj, "slots", static_cast<TESObjectARMO*>(e->sourceItem)->bipedObject.data.parts);
 		GFxValue name;
 		const char* n = mgef->fullName.name.data;
 		view->CreateString(&name, n ? n : "");
@@ -78,7 +92,7 @@ extern "C" {
 __declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version =
 {
 	SKSEPluginVersionData::kVersion,
-	1,
+	2,
 	"ActiveEffectCategories",
 	"zeroregard",
 	"",

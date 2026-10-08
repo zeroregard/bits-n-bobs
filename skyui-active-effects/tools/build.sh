@@ -16,7 +16,8 @@ $FFDEC -export script "$W/il" "$IL" >/dev/null 2>&1
 python3 "$T/patch_aec.py" "$W/mm/scripts"
 python3 "$T/patch_aec_lists.py" "$W/il/scripts"
 mkdir -p "$W/mm_only/scripts/__Packages" "$W/il_only/scripts/__Packages"
-cp "$W/mm/scripts/__Packages/MagicDataSetter.as" "$W/mm/scripts/__Packages/MagicMenu.as" "$W/mm_only/scripts/__Packages/"
+cp "$W/mm/scripts/__Packages/MagicDataSetter.as" "$W/mm/scripts/__Packages/MagicMenu.as" \
+   "$W/mm/scripts/__Packages/MagicIconSetter.as" "$W/mm_only/scripts/__Packages/"
 cp "$W/il/scripts/__Packages/InventoryLists.as" "$W/il_only/scripts/__Packages/"
 mkdir -p "$OUT/Interface/SkyUI"
 $FFDEC -importScript "$MM" "$OUT/Interface/magicmenu.swf" "$W/mm_only" >/dev/null 2>&1

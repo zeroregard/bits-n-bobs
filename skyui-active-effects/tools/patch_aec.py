@@ -106,4 +106,106 @@ edit("MagicMenu.as",
      '"mag_powers","mag_activeeffects"];',
      '"mag_powers","aec_temporal","aec_harmful","aec_perks","mag_activeeffects"];',
      "icon art for the new categories (frames added by patch_icons.py)", '"aec_temporal"')
+# 5. per-effect icons. The plugin's raw fields go on the entry; the mapping lives here so
+#    it can be tuned without restarting the game. MagicIconSetter may run before or after
+#    MagicDataSetter (processing can be deferred), so both set the label.
+edit("MagicDataSetter.as",
+     "               if(aecR == undefined) { aecR = {det:false,ench:false}; this.aecSrc[aecKeys[aecJ]] = aecR; }\n",
+     "               if(aecR == undefined) { aecR = {det:false,ench:false}; this.aecSrc[aecKeys[aecJ]] = aecR; }\n"
+     "               if(aecR.rec == undefined) { aecR.rec = aecE; }\n",
+     "keep the plugin record per key", "aecR.rec = aecE")
+edit("MagicDataSetter.as",
+     "            a_entryObject.filterFlag = a_entryObject.filterFlag | a_entryObject.aecFlags;\n",
+     "            a_entryObject.filterFlag = a_entryObject.filterFlag | a_entryObject.aecFlags;\n"
+     "            this.aecPickIcon(a_entryObject,aecInfo == undefined ? undefined : aecInfo.rec);\n",
+     "pick icon per effect", "this.aecPickIcon(a_entryObject")
+ICON_FN = """   function aecPickIcon(a_e, r)
+   {
+      if(r == undefined)
+      {
+         return undefined;
+      }
+      var L = undefined;
+      var C = undefined;
+      var av = r.primaryAV;
+      var st = r.spellType;
+      var sl = r.slots;
+      if(r.archetype == 46 || r.archetype == 36)
+      {
+         L = "magic_vampire";
+      }
+      else if(r.itemType == 46)
+      {
+         L = "default_potion";
+         if((r.alchFlags & 131072) != 0) { L = "potion_poison"; C = 11337907; }
+         else if((r.alchFlags & 2) != 0) { L = "default_food"; }
+         else if(av == 24) { L = "potion_health"; C = 14364275; }
+         else if(av == 25) { L = "potion_magic"; C = 3055579; }
+         else if(av == 26) { L = "potion_stam"; C = 5364526; }
+         else if(av == 41) { L = "potion_fire"; C = 13055542; }
+         else if(av == 42) { L = "potion_shock"; C = 15379200; }
+         else if(av == 43) { L = "potion_frost"; C = 2096127; }
+      }
+      else if(r.itemType == 21 && r.sourceType == 41)
+      {
+         L = "default_weapon";
+      }
+      else if(r.itemType == 21 && r.sourceType == 26)
+      {
+         L = "default_armor";
+         if((sl & 64) != 0) { L = "armor_ring"; }
+         else if((sl & 32) != 0) { L = "armor_amulet"; }
+         else if((sl & 4096) != 0) { L = "armor_circlet"; }
+         else if((sl & 512) != 0) { L = "armor_shield"; }
+         else if((sl & 4) != 0) { L = "armor_body"; }
+         else if((sl & 3) != 0) { L = "armor_head"; }
+         else if((sl & 8) != 0) { L = "armor_hands"; }
+         else if((sl & 16) != 0) { L = "armor_forearms"; }
+         else if((sl & 128) != 0) { L = "armor_feet"; }
+      }
+      else if(st == 7)
+      {
+         L = "default_shout";
+      }
+      else if(st == 1)
+      {
+         L = "potion_poison";
+         C = 7048739;
+      }
+      if(L == undefined)
+      {
+         if(r.resist == 41 || av == 41) { L = "magic_fire"; C = 13055542; }
+         else if(r.resist == 42 || av == 42) { L = "magic_shock"; C = 15379200; }
+         else if(r.resist == 43 || av == 43) { L = "magic_frost"; C = 2096127; }
+         else if(r.school == 18) { L = "default_alteration"; }
+         else if(r.school == 19) { L = "default_conjuration"; }
+         else if(r.school == 20) { L = "default_destruction"; }
+         else if(r.school == 21) { L = "default_illusion"; }
+         else if(r.school == 22) { L = "default_restoration"; }
+         else if(st == 2 || st == 3) { L = "default_power"; }
+      }
+      if(L != undefined)
+      {
+         a_e.aecIcon = L;
+         a_e.iconLabel = L;
+      }
+      if(C != undefined)
+      {
+         a_e.aecColor = C;
+         a_e.iconColor = C;
+      }
+   }
+"""
+edit("MagicDataSetter.as",
+     "   function processList(a_list)\n",
+     ICON_FN + "   function processList(a_list)\n",
+     "icon mapping (school / element / potion / worn slot / shout / disease)", "function aecPickIcon")
+edit("MagicIconSetter.as",
+     '            a_entryObject.iconLabel = "default_effect";\n',
+     '            a_entryObject.iconLabel = a_entryObject.aecIcon != undefined ? a_entryObject.aecIcon : "default_effect";\n'
+     '            if(a_entryObject.aecColor != undefined)\n'
+     '            {\n'
+     '               a_entryObject.iconColor = a_entryObject.aecColor;\n'
+     '            }\n',
+     "icon setter keeps the per-effect icon", "a_entryObject.aecIcon != undefined")
 print("all patches applied")
