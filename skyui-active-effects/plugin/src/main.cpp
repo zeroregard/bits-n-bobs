@@ -14,6 +14,8 @@
 #include "skse64/GameForms.h"
 #include "skse64/GameData.h"
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include <unordered_set>
 
 // 1.6.1170 address, from SKSE 2.2.6 GameAPI.cpp
@@ -124,6 +126,18 @@ static bool ListHas(const TESSpellList& list, const MagicItem* item)
 	return false;
 }
 
+// Diagnostics: every menu open rewrites ActiveEffectCategories.log in the SKSE log folder
+// with what the plugin saw for each effect.
+static FILE* OpenLog()
+{
+	char path[1024];
+	const char* home = std::getenv("USERPROFILE");
+	if (!home)
+		return nullptr;
+	std::snprintf(path, sizeof(path), "%s\\Documents\\My Games\\Skyrim Special Edition\\SKSE\\ActiveEffectCategories.log", home);
+	return std::fopen(path, "w");
+}
+
 static void SetNum(GFxValue* obj, const char* name, double n) { GFxValue v; v.SetNumber(n); obj->SetMember(name, &v); }
 
 class EffectVisitor
@@ -131,8 +145,9 @@ class EffectVisitor
 	GFxMovieView* view;
 	GFxValue* out;
 	PlayerCharacter* pc;
+	FILE* log;
 public:
-	EffectVisitor(GFxMovieView* a_view, GFxValue* a_out, PlayerCharacter* a_pc) : view(a_view), out(a_out), pc(a_pc) {}
+	EffectVisitor(GFxMovieView* a_view, GFxValue* a_out, PlayerCharacter* a_pc, FILE* a_log) : view(a_view), out(a_out), pc(a_pc), log(a_log) {}
 	bool Accept(ActiveEffect* e)
 	{
 		if (!e || !e->effect || !e->effect->mgef)
@@ -183,6 +198,15 @@ public:
 			GFxValue mod;
 			view->CreateString(&mod, ModNameOf(e->item->formID));
 			obj.SetMember("modName", &mod);
+			if (log) {
+				const char* mn = mgef->fullName.name.data;
+				const char* inm = e->item->fullName.name.data;
+				std::fprintf(log, "mgef %08X %-32s | item %08X type %2u %-36s | spellType %d origin %u perkSet %d perkCond %d super %u flags %08X | %s\n",
+					mgef->formID, mn ? mn : "", e->item->formID, e->item->formType, inm ? inm : "",
+					(e->item->formType == kFormType_Spell) ? (int)static_cast<SpellItem*>(e->item)->data.type : -1,
+					origin, (int)s_perkSpells.count(e->item->formID), PerkConditioned(e->effect) ? 1 : 0, super,
+					mgef->properties.flags, ModNameOf(e->item->formID));
+			}
 			GFxValue itemName;
 			const char* in = e->item->fullName.name.data;
 			view->CreateString(&itemName, in ? in : "");
@@ -214,8 +238,16 @@ public:
 		if (!effects)
 			return;
 		BuildPerkSpells();
-		EffectVisitor v(args->movie, &args->args[0], pc);
+		FILE* log = OpenLog();
+		if (log) {
+			DataHandler* dh = *s_dataHandler;
+			std::fprintf(log, "perks in data: %u, perk ability spells: %zu, mortal race spells: %zu, race %08X\n",
+				dh ? dh->arrPERK.count : 0, s_perkSpells.size(), s_mortalRaceSpells.size(), pc->race ? pc->race->formID : 0);
+		}
+		EffectVisitor v(args->movie, &args->args[0], pc, log);
 		effects->Visit(v);
+		if (log)
+			std::fclose(log);
 	}
 };
 
@@ -229,7 +261,7 @@ extern "C" {
 __declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version =
 {
 	SKSEPluginVersionData::kVersion,
-	4,
+	5,
 	"ActiveEffectCategories",
 	"zeroregard",
 	"",

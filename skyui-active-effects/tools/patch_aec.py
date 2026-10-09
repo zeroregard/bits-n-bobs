@@ -154,6 +154,7 @@ ICON_FN = """   function aecPickIcon(a_e, r)
          else if(nm.indexOf("stone") >= 0) { T = "Standing Stone"; }
       }
       if(String(r.name).indexOf("Blessing") >= 0 || String(r.itemName).indexOf("Blessing") >= 0 || String(a_e.text).indexOf("Blessing") >= 0) { T = "Blessing"; }
+      if(String(r.modName).toLowerCase() == "dragonborn.esm" && ",215096,215095,215092,156798,156797,156795,124917,124915,124911,243014,124931,124928,124925,124922,124919,202820,202818,".indexOf("," + (r.item & 16777215) + ",") >= 0) { T = "Black Book"; }
       a_e.aecType = T;
       if(r.archetype == 46 || r.archetype == 36)
       {
@@ -218,6 +219,7 @@ ICON_FN = """   function aecPickIcon(a_e, r)
          else if(r.school == 22) { L = "default_restoration"; }
          else if(st == 2 || st == 3) { L = "default_power"; }
       }
+      if(T == "Black Book") { L = "aec_blackbook"; C = 10145074; }
       if(L != undefined)
       {
          a_e.aecIcon = L;
@@ -233,7 +235,7 @@ ICON_FN = """   function aecPickIcon(a_e, r)
 edit("MagicDataSetter.as",
      "   function processList(a_list)\n",
      ICON_FN + "   function processList(a_list)\n",
-     "icon + type mapping (school / element / potion / worn slot / shout / disease)", "function aecPickIcon")
+     "icon + type mapping (school / element / potion / worn slot / shout / disease / black book)", "function aecPickIcon")
 edit("MagicIconSetter.as",
      '            a_entryObject.iconLabel = "default_effect";\n',
      '            a_entryObject.iconLabel = a_entryObject.aecIcon != undefined ? a_entryObject.aecIcon : "default_effect";\n'

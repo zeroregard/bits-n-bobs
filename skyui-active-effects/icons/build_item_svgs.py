@@ -53,6 +53,12 @@ race = U(head, D(shoulders, circ(40, 32, 19.5)))
 stone = U(P("M26 88 L21 32 C20 18 30 10 41 10 C53 10 61 18 59 32 L55 88 Z"), rrect(12, 86, 56, 7, 3))
 stone = D(stone, stroke(P("M40 32 L40 70 M40 45 L31 36 M40 45 L49 36 M40 58 L33 65"), 4))
 
+# black book: closed tome with Hermaeus Mora's eye on the cover
+book = U(rrect(18, 12, 46, 80, 5), rrect(14, 16, 8, 72, 3))
+eye = P("M24 50 C32 36 50 36 58 50 C50 64 32 64 24 50 Z")
+eye_ring = D(eye, P("M28 50 C34 40 48 40 54 50 C48 60 34 60 28 50 Z"))
+blackbook = D(book, U(eye_ring, stroke(P("M22 16 L22 88"), 2.5), D(circ(41, 50, 7), circ(41, 50, 3.5))))
+
 def svgstr(p):
     f = lambda v: ('%.2f' % v).rstrip('0').rstrip('.')
     o = []; it = skia.Path.Iter(p, False)
@@ -69,7 +75,7 @@ def svgstr(p):
         elif verb == skia.Path.kClose_Verb: o.append('Z')
     return ''.join(o)
 
-for name, g in [("aec_affliction", affliction), ("aec_perk", perk), ("aec_race", race), ("aec_stone", stone)]:
+for name, g in [("aec_affliction", affliction), ("aec_perk", perk), ("aec_race", race), ("aec_stone", stone), ("aec_blackbook", blackbook)]:
     g = skia.Simplify(g)
     open(f"{out}/{name}.svg", "w").write(
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 102" width="80" height="102">'
