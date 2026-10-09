@@ -121,9 +121,9 @@ def cmd_place(src, dst):
     print(f"{REF}: stage twips x {rx0:.0f}..{rx1:.0f} y {ry0:.0f}..{ry1:.0f}")
     for label, chid in NEW:
         _, (x0, x1, y0, y1) = stage_bounds(tags, fl[label])
-        s = (ry1 - ry0) / (y1 - y0)                     # match height
-        tx = round((rx0 + rx1) / 2 - (x0 + x1) / 2 * s)  # centre horizontally
-        ty = round(ry0 - y0 * s)
+        s = min((ry1 - ry0) / (y1 - y0), (rx1 - rx0) / (x1 - x0))   # fit the reference box
+        tx = round((rx0 + rx1) / 2 - (x0 + x1) / 2 * s)            # centred both ways
+        ty = round((ry0 + ry1) / 2 - (y0 + y1) / 2 * s)
         i = next(i for i in fl[label] if tags[i][0] == 26)
         tags[i][1] = bytes([0x16]) + struct.pack('<HH', 4, chid + 1) + matrix(tx, ty, s, s) + struct.pack('<H', 0)
         print(f"{label}: shape {x0}..{x1} x {y0}..{y1}, scale {s:.4f}, translate {tx},{ty} ->",

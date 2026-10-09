@@ -1,9 +1,9 @@
 """Patch SkyUI 6.11 magicmenu.swf AS2 sources (only classes this SWF really owns).
 
 Classifies each Active Effects entry into one of three sub-categories:
-  ONGOING EFFECTS 1024  time-limited, or from an enchantment (worn items)
-  HARMFUL EFFECTS  512  the magic effect is Hostile or Detrimental (timed or not)
-  BOON EFFECTS    2048  everything else (abilities, perks, racials, blessings)
+  ONGOING EFFECTS 1024  time-limited, or from an enchantment (worn items) -- incl. poisons and timed debuffs
+  LASTING EFFECTS 2048  everything else, good or bad: perks, racials, blessings, curses, diseases, vampirism
+The split is by duration, not good vs bad; the TYPE column and row icons tell those apart.
 
 Source/flag data comes from the companion SKSE plugin (skse.plugins.AEC, see
 ../plugin). The magic menu itself only receives an effect's name and type. If the
@@ -40,11 +40,7 @@ edit("MagicDataSetter.as",
      "               aecInfo = this.aecSrc[\"k\" + a_entryObject.formId];\n"
      "               if(aecInfo == undefined) { aecInfo = this.aecSrc[\"n\" + a_entryObject.text]; }\n"
      "            }\n"
-     "            if(aecInfo != undefined && aecInfo.det)\n"
-     "            {\n"
-     "               a_entryObject.aecFlags = 512;\n"
-     "            }\n"
-     "            else if(aecTimed || aecInfo != undefined && aecInfo.ench)\n"
+     "            if(aecTimed || aecInfo != undefined && aecInfo.ench)\n"
      "            {\n"
      "               a_entryObject.aecFlags = 1024;\n"
      "            }\n"
@@ -53,7 +49,7 @@ edit("MagicDataSetter.as",
      "               a_entryObject.aecFlags = 2048;\n"
      "            }\n"
      "            a_entryObject.filterFlag = a_entryObject.filterFlag | a_entryObject.aecFlags;\n",
-     "classify active effects (Temporal/Harmful/Perks)", "aecFlags = 512")
+     "classify active effects (Ongoing/Lasting)", "aecFlags = 1024")
 
 # 2. fetch plugin data once per pass, then recount categories after (possibly deferred) processing
 edit("MagicDataSetter.as",
@@ -104,8 +100,8 @@ edit("MagicMenu.as",
 # 4. icons
 edit("MagicMenu.as",
      '"mag_powers","mag_activeeffects"];',
-     '"mag_powers","aec_temporal","aec_harmful","aec_perks","mag_activeeffects"];',
-     "icon art for the new categories (frames added by patch_icons.py)", '"aec_temporal"')
+     '"mag_powers","aec_ongoing","aec_lasting","mag_activeeffects"];',
+     "icon art for the new categories (frames added by patch_icons.py)", '"aec_ongoing"')
 # 5. per-effect icons. The plugin's raw fields go on the entry; the mapping lives here so
 #    it can be tuned without restarting the game. MagicIconSetter may run before or after
 #    MagicDataSetter (processing can be deferred), so both set the label.

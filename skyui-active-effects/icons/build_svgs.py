@@ -21,19 +21,6 @@ def U(*ps):
 def D(a,b): return skia.Op(a,b,skia.PathOp.kDifference_PathOp)
 def circ(x,y,r): p=skia.Path(); p.addCircle(x,y,r); return p
 def rrect(x,y,w,h,r): p=skia.Path(); p.addRRect(skia.RRect.MakeRectXY(skia.Rect.MakeXYWH(x,y,w,h),r,r)); return p
-RING = 10      # shield wall thickness; outer edge stays where the original 6-wide stroke put it
-GLYPH = 0.9    # inner symbol scale, around the shield's centre
-SP = P("M40 2 L76 12 V46 C76 70 60 86 40 96 C20 86 4 70 4 46 V12 Z")
-shield = D(U(SP, stroke(SP, 6)), D(SP, stroke(SP, 2 * (RING - 3))))
-hour = U(rrect(24,22,32,5,2), rrect(24,71,32,5,2),
-         stroke(P("M28 27 L52 27 L40 49 L52 71 L28 71 L40 49 Z"),4),
-         P("M34 31 L46 31 L40 41 Z"), P("M40 57 L48 67 L32 67 Z"))
-skull = U(circ(40,42,17), rrect(30,50,20,18,3))
-holes = U(circ(33.5,42,5), circ(46.5,42,5), P("M40 49 L37 55 L43 55 Z"),
-          rrect(34.5,60,2,7.5,0), rrect(39,60,2,7.5,0), rrect(43.5,60,2,7.5,0))
-skull = D(skull, holes)
-crown = U(stroke(P("M24 64 L22 36 L32 47 L40 30 L48 47 L58 36 L56 64 Z"),2), P("M24 64 L22 36 L32 47 L40 30 L48 47 L58 36 L56 64 Z"),
-          rrect(24,66,32,6,2), circ(22,32,3.5), circ(40,25,3.5), circ(58,32,3.5))
 def svgstr(p):
     f=lambda v: ('%.2f'%v).rstrip('0').rstrip('.')
     out=[]; it=skia.Path.Iter(p, False)
@@ -50,12 +37,36 @@ def svgstr(p):
             for k in range(1,len(q),2): out.append('Q%s %s %s %s'%(f(q[k].x()),f(q[k].y()),f(q[k+1].x()),f(q[k+1].y())))
         elif verb==skia.Path.kClose_Verb: out.append('Z')
     return ''.join(out)
-for name, g in [("effects_ongoing",hour),("effects_harmful",skull),("effects_boons",crown)]:
-    g = skia.Path(g); g.transform(skia.Matrix().setScale(GLYPH, GLYPH, 40, 49))
-    full = skia.Op(shield, g, skia.PathOp.kUnion_PathOp)
-    full = skia.Simplify(full); full.offset(0,2)
-    b = full.computeTightBounds()
-    open(f"{out}/{name}.svg","w").write(
-      f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 102" width="80" height="102">'
-      f'<path fill="#FFFFFF" fill-rule="evenodd" d="{svgstr(full)}"/></svg>\n')
-    print(name, b)
+
+RC=skia.Paint.kRound_Cap
+def Q(d):
+    t=re.findall(r'[MLQCZ]|-?[\d.]+',d); p=skia.Path(); i=0
+    while i<len(t):
+        c=t[i]; i+=1
+        if c=='M': p.moveTo(float(t[i]),float(t[i+1])); i+=2
+        elif c=='L': p.lineTo(float(t[i]),float(t[i+1])); i+=2
+        elif c=='Q': a=[float(v) for v in t[i:i+4]]; p.quadTo(*a); i+=4
+        elif c=='C': a=[float(v) for v in t[i:i+6]]; p.cubicTo(*a); i+=6
+        elif c=='Z': p.close()
+    return p
+def xf(p, tx, ty, deg):
+    m=skia.Matrix(); m.setTranslate(tx,ty); m.preRotate(deg); r=skia.Path(p); r.transform(m); return r
+# draining
+shield = stroke(P("M40 4 L76 14 V48 C76 72 60 88 40 98 C20 88 4 72 4 48 V14 Z"), 6)
+fill = Q("M14 50 Q27 44 40 50 Q53 56 66 50 C66 66 54 78 40 86 C26 78 14 66 14 50 Z")
+drain = skia.Simplify(U(shield, fill))
+# twin masks
+face = Q("M0 0 C0 -6 40 -6 40 0 C40 26 32 42 20 46 C8 42 0 26 0 0 Z")
+sad_feat = U(stroke(Q("M7 13 L15 10"),3.5,cap=RC), stroke(Q("M25 10 L33 13"),3.5,cap=RC), Q("M10 37 Q20 23 30 37 Q20 32 10 37 Z"))
+happy_feat = U(stroke(Q("M7 13 Q11 7 15 13"),3.5,cap=RC), stroke(Q("M25 13 Q29 7 33 13"),3.5,cap=RC), Q("M8 22 Q20 25 32 22 Q29 37 20 37 Q11 37 8 22 Z"))
+back = D(face, sad_feat); front = D(face, happy_feat)
+back = xf(back,36,30,14); frontT = xf(front,4,22,-14); faceT = xf(face,4,22,-14)
+gap = U(faceT, stroke(faceT,3))
+masks = skia.Simplify(U(D(back,gap), frontT))
+sm=skia.Matrix(); sm.setScale(1.1,1.1); masks.transform(sm); b=masks.computeTightBounds()
+masks.offset(40-(b.left()+b.right())/2, 51-(b.top()+b.bottom())/2)
+import sys; out=sys.argv[1]
+for name,g in [("effects_ongoing",drain),("effects_lasting",masks)]:
+    if name=="effects_ongoing": g.offset(0,0)
+    open(f"{out}/{name}.svg","w").write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 102" width="80" height="102"><path fill="#FFFFFF" fill-rule="evenodd" d="%s"/></svg>\n'%svgstr(g))
+    print(name,g.computeTightBounds())

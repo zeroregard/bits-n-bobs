@@ -24,10 +24,10 @@ $FFDEC -importScript "$MM" "$OUT/Interface/magicmenu.swf" "$W/mm_only" >/dev/nul
 $FFDEC -importScript "$IL" "$OUT/Interface/SkyUI/inventorylists.swf" "$W/il_only" >/dev/null 2>&1
 # tab icons: three new labelled frames in a copy of the category icon SWF
 ICO="$W/bsa/interface/skyui/icons_category_psychosteve.swf"; SVG="$T/../icons"
-TABS="mag_activeeffects aec_temporal:900 aec_harmful:902 aec_perks:904"
+TABS="mag_activeeffects aec_ongoing:900 aec_lasting:902"
 python3 "$T/patch_icons.py" frames "$ICO" "$W/ico1.swf" $TABS
 $FFDEC -replace "$W/ico1.swf" "$W/ico2.swf" 900 "$SVG/effects_ongoing.svg" nofill \
-  902 "$SVG/effects_harmful.svg" nofill 904 "$SVG/effects_boons.svg" nofill >/dev/null 2>&1
+  902 "$SVG/effects_lasting.svg" nofill >/dev/null 2>&1
 python3 "$T/patch_icons.py" place "$W/ico2.swf" "$OUT/Interface/SkyUI/icons_category_psychosteve.swf" $TABS
 # row icons: new frames in a copy of the item icon SWF
 ITM="$W/bsa/interface/skyui/icons_item_psychosteve.swf"
