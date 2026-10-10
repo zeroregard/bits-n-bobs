@@ -3,7 +3,10 @@
   MAIN  main quest, Dawnguard, Dragonborn                      (types 1, 10, 11)
   SIDE  guilds, Companions, Daedric, Civil War, anything else  (types 2-5, 7, 9, ...)
   MISC  the Miscellaneous entry, favors, misc-type quests      (formID 0, types 0, 6, 8)
-  DONE  completed quests
+  COMPLETED  completed quests
+
+The quest page is shrunk uniformly to free a band at its top (qjLayout, bottom edge
+kept); the subtab bar is drawn in that band on the page's parent so it isn't scaled.
 
 The engine fills TitleList.entryList once per journal open, then calls
 onQuestsDataComplete; the full list is kept in qjAll and TitleList shows one
@@ -104,15 +107,17 @@ sub("      this.TitleList.InvalidateData();\n"
     "   }\n"
     "   function qjDrawTabs()\n"
     "   {\n"
+    "      this.qjLayout();\n"
     "      if(this.qjTabs == undefined)\n"
     "      {\n"
-    "         this.createTextField(\"qjTabs\",this.getNextHighestDepth(),this.TitleList_mc._x,this.TitleList_mc._y - 46,640,40);\n"
+    "         this._parent.createTextField(\"qjTabs\",this._parent.getNextHighestDepth(),this.qjOrigX,this.qjOrigY + 2,this.qjOrigW,this.qjBand);\n"
+    "         this.qjTabs = this._parent.qjTabs;\n"
     "         this.qjTabs.embedFonts = true;\n"
     "         this.qjTabs.html = true;\n"
     "         this.qjTabs.selectable = false;\n"
     "      }\n"
-    "      var qjNames = [\"MAIN\",\"SIDE\",\"MISC\",\"DONE\"];\n"
-    "      var qjH = \"<font face='$EverywhereMediumFont' size='24'>\";\n"
+    "      var qjNames = [\"MAIN\",\"SIDE\",\"MISC\",\"COMPLETED\"];\n"
+    "      var qjH = \"<p align='center'><font face='$EverywhereMediumFont' size='24'>\";\n"
     "      var qjI = 0;\n"
     "      while(qjI < 4)\n"
     "      {\n"
@@ -129,7 +134,29 @@ sub("      this.TitleList.InvalidateData();\n"
     "         qjH = qjH + \"<font color='\" + (qjI == this.qjTab ? \"#FFFFFF\" : \"#6E6E6E\") + \"'>\" + qjNames[qjI] + \" \" + qjN + \"</font>    \";\n"
     "         qjI = qjI + 1;\n"
     "      }\n"
-    "      this.qjTabs.htmlText = qjH + \"</font>\";\n"
+    "      this.qjTabs.htmlText = qjH + \"</font></p>\";\n"
+    "   }\n"
+    "   function qjLayout()\n"
+    "   {\n"
+    "      if(this.qjLaid)\n"
+    "      {\n"
+    "         return undefined;\n"
+    "      }\n"
+    "      this.qjLaid = true;\n"
+    "      this.qjBand = 40;\n"
+    "      this.qjOrigX = this._x;\n"
+    "      this.qjOrigY = this._y;\n"
+    "      this.qjOrigW = this._width;\n"
+    "      var qjH0 = this._height;\n"
+    "      if(qjH0 <= this.qjBand)\n"
+    "      {\n"
+    "         return undefined;\n"
+    "      }\n"
+    "      var qjS = (qjH0 - this.qjBand) / qjH0;\n"
+    "      this._xscale = this._xscale * qjS;\n"
+    "      this._yscale = this._yscale * qjS;\n"
+    "      this._x = this.qjOrigX + this.qjOrigW * (1 - qjS) / 2;\n"
+    "      this._y = this.qjOrigY + this.qjBand;\n"
     "   }\n"
     "   function completedQuestSort",
     "keep the full list, show one subtab")
