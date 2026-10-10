@@ -1,0 +1,120 @@
+From e3869033867617fa4be300d8c5543cf833b30b18 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 10 Oct 2026 16:44:09 +0200
+Subject: [PATCH] Equip the inventory instance, not the base form; don't poll
+ under menus
+
+EquipObject/UnequipObject were called with a null ExtraDataList, so the engine
+equipped a plain copy: player enchantments and tempering were lost, the real
+instance never counted as worn, and the outfit was re-equipped every poll. Pick
+the worn/enchanted/tempered instance from the inventory entry instead.
+Skip the auto-switch poll while the game is paused in a menu; swapping
+equipment under an open inventory crashed in ItemCard::ShowItemData.
+Also fix an include's case (breaks on case-sensitive filesystems).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QAgw8rWVUatZmYY6SCRg6S
+---
+ include/OutfitSystemCacheService.h |  2 +-
+ src/AutoOutfitSwitchService.cpp    |  3 +++
+ src/OutfitSystem.cpp               | 29 +++++++++++++++++++++++++++--
+ 3 files changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/include/OutfitSystemCacheService.h b/include/OutfitSystemCacheService.h
+index 4ec1934..18e3b29 100644
+--- a/include/OutfitSystemCacheService.h
++++ b/include/OutfitSystemCacheService.h
+@@ -8,7 +8,7 @@
+ 
+ #include "RE/Skyrim.h"
+ 
+-#include "ArmorAddonoverrideService.h"
++#include "ArmorAddonOverrideService.h"
+ 
+ class OutfitSystemCacheService {
+ public:
+diff --git a/src/AutoOutfitSwitchService.cpp b/src/AutoOutfitSwitchService.cpp
+index b3e1c81..c438978 100644
+--- a/src/AutoOutfitSwitchService.cpp
++++ b/src/AutoOutfitSwitchService.cpp
+@@ -62,6 +62,9 @@ void AutoOutfitSwitchService::MonitorThreadFunc() {
+         if (accumulatedTimeMS >= updateIntervalMS) {
+             // Queue a task to check for changes on the main thread
+             SKSE::GetTaskInterface()->AddTask([this]() {
++                // Don't change equipment under an open menu (inventory, barter...): the menu
++                // holds pointers into the inventory, and sorting it after a swap crashed.
++                if (auto ui = RE::UI::GetSingleton(); ui && ui->GameIsPaused()) return;
+                 REUtilities::ExtraDebugNotification("Checking changes to location...");
+                 this->CheckForChanges();
+             });
+diff --git a/src/OutfitSystem.cpp b/src/OutfitSystem.cpp
+index 17c05ca..8299952 100644
+--- a/src/OutfitSystem.cpp
++++ b/src/OutfitSystem.cpp
+@@ -86,6 +86,27 @@ namespace OutfitSystem {
+         return result;
+     }
+ 
++    // The inventory instance of an armor to (un)equip. Enchantments and tempering live in
++    // the instance's ExtraDataList, so equipping the base form (nullptr list) gives the
++    // actor a plain copy. Prefer the worn instance, then enchanted, then tempered.
++    RE::ExtraDataList* PickArmorInstance(const RE::InventoryEntryData* entry) {
++        if (!entry || !entry->extraLists) return nullptr;
++        RE::ExtraDataList* best = nullptr;
++        int bestScore = -1;
++        for (auto* xList : *entry->extraLists) {
++            if (!xList) continue;
++            int score = 0;
++            if (xList->HasType(RE::ExtraDataType::kWorn) || xList->HasType(RE::ExtraDataType::kWornLeft)) score += 4;
++            if (xList->HasType(RE::ExtraDataType::kEnchantment)) score += 2;
++            if (xList->HasType(RE::ExtraDataType::kHealth)) score += 1;
++            if (score > bestScore) {
++                best = xList;
++                bestScore = score;
++            }
++        }
++        return best;
++    }
++
+     void RefreshArmorForActor(RE::Actor* target) {
+         if (!target) {
+             EXTRALOG(info, "Actor not loaded");
+@@ -114,6 +135,7 @@ namespace OutfitSystem {
+         // Get currently equipped items
+         std::unordered_set<RE::TESObjectARMO*> equippedArmors;
+         std::unordered_set<RE::TESObjectARMO*> outfitArmorsInInventory;
++        std::unordered_map<RE::TESObjectARMO*, RE::ExtraDataList*> armorInstances;
+ 
+         bool isPlayerCharacter = target == RE::PlayerCharacter::GetSingleton();
+         bool forceEquip = !isPlayerCharacter && !Settings::AllowExternalEquipment();  // If not the player, and no external equipment allowed, force equipment
+@@ -154,6 +176,8 @@ namespace OutfitSystem {
+                         equippedArmors.insert(armor);
+                     }
+ 
++                    if (armor) armorInstances[armor] = PickArmorInstance(data.second.get());
++
+                     // if the current armor is part of the outfit, mark it as an inventory item
+                     if (displayItems.contains(armor)) outfitArmorsInInventory.insert(armor);
+                 }
+@@ -163,7 +187,7 @@ namespace OutfitSystem {
+                 // if the currently equipped outfit is not part of the outfit, remove it
+                 if (!displayItems.contains(equippedArmor)) {
+                     auto* equipSlot = equippedArmor->GetEquipSlot();
+-                    equipManager->UnequipObject(target, equippedArmor, nullptr, 1, equipSlot, false, forceEquip, false, true);
++                    equipManager->UnequipObject(target, equippedArmor, armorInstances[equippedArmor], 1, equipSlot, false, forceEquip, false, true);
+                 }
+             }
+         }
+@@ -191,7 +215,8 @@ namespace OutfitSystem {
+                 auto* equipSlot = armor->GetEquipSlot();
+ 
+                 // Use ActorEquipManager to equip
+-                equipManager->EquipObject(target, armor, nullptr, 1, equipSlot, false, forceEquip, false, true);
++                auto instance = armorInstances.find(armor);
++                equipManager->EquipObject(target, armor, instance != armorInstances.end() ? instance->second : nullptr, 1, equipSlot, false, forceEquip, false, true);
+                 equipCount++;
+                 EXTRALOG(info,"Equipped {} on {}", armor->GetName(), target->GetName());
+             }
+-- 
+2.50.1
+
