@@ -171,10 +171,12 @@ sub("   function handleInput(details, pathToFocus)\n   {\n",
 # 3. the bar lives on the page's parent, so it doesn't fade with the page: hide/show it
 sub("   function endPage()\n   {\n",
     "   function endPage()\n   {\n"
-    "      this._parent.qjTabs._visible = false;\n",
-    "hide subtab bar on other journal tabs")
+    "      this._parent.qjTabs._visible = false;\n"
+    "      this._visible = false;\n",
+    "hide subtab bar and page on other journal tabs (scripted transform detaches the page from the fader's timeline)")
 sub("   function startPage()\n   {\n",
     "   function startPage()\n   {\n"
-    "      this._parent.qjTabs._visible = true;\n",
-    "show subtab bar on the quests tab")
+    "      this._parent.qjTabs._visible = true;\n"
+    "      this._visible = true;\n",
+    "show subtab bar and page on the quests tab")
 open(P, "w", encoding="utf-8").write(s)
