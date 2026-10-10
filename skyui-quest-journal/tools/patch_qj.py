@@ -2,7 +2,8 @@
 
   MAIN       main quest, Dawnguard, Dragonborn                   (types 1, 10, 11)
   FACTIONS   Mages, Thieves, Dark Brotherhood, Companions, Civil War (types 2-5, 9)
-  SIDE       Daedric, favors, misc-type, the Miscellaneous entry, anything else
+  DAEDRIC    Daedric quests                                          (type 7)
+  SIDE       favors, misc-type, the Miscellaneous entry, anything else
   COMPLETED  completed quests
 
 The quest page is shrunk uniformly to free a band at its top (qjLayout, bottom edge
@@ -52,7 +53,7 @@ sub("      this.TitleList.InvalidateData();\n"
     "   {\n"
     "      if(e.completed)\n"
     "      {\n"
-    "         return 3;\n"
+    "         return 4;\n"
     "      }\n"
     "      if(e.formID != 0 && (e.type == 1 || e.type == 10 || e.type == 11))\n"
     "      {\n"
@@ -62,7 +63,11 @@ sub("      this.TitleList.InvalidateData();\n"
     "      {\n"
     "         return 1;\n"
     "      }\n"
-    "      return 2;\n"
+    "      if(e.formID != 0 && e.type == 7)\n"
+    "      {\n"
+    "         return 2;\n"
+    "      }\n"
+    "      return 3;\n"
     "   }\n"
     "   function qjApply(keep)\n"
     "   {\n"
@@ -101,7 +106,7 @@ sub("      this.TitleList.InvalidateData();\n"
     "      {\n"
     "         return undefined;\n"
     "      }\n"
-    "      this.qjTab = (this.qjTab + d + 4) % 4;\n"
+    "      this.qjTab = (this.qjTab + d + 5) % 5;\n"
     "      gfx.io.GameDelegate.call(\"PlaySound\",[\"UIMenuFocus\"]);\n"
     "      this.qjApply(undefined);\n"
     "   }\n"
@@ -116,10 +121,10 @@ sub("      this.TitleList.InvalidateData();\n"
     "         this.qjTabs.html = true;\n"
     "         this.qjTabs.selectable = false;\n"
     "      }\n"
-    "      var qjNames = [\"MAIN\",\"FACTIONS\",\"SIDE\",\"COMPLETED\"];\n"
+    "      var qjNames = [\"MAIN\",\"FACTIONS\",\"DAEDRIC\",\"SIDE\",\"COMPLETED\"];\n"
     "      var qjH = \"<p align='center'><font face='$EverywhereMediumFont' size='19'>\";\n"
     "      var qjI = 0;\n"
-    "      while(qjI < 4)\n"
+    "      while(qjI < 5)\n"
     "      {\n"
     "         qjH = qjH + \"<font color='\" + (qjI == this.qjTab ? \"#FFFFFF\" : \"#6E6E6E\") + \"'>\" + qjNames[qjI] + \"</font>      \";\n"
     "         qjI = qjI + 1;\n"
