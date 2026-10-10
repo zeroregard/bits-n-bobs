@@ -231,6 +231,19 @@ sub("      this.TitleList.InvalidateData();\n"
     "      this._yscale = this._yscale * qjS;\n"
     "      this._x = this.qjOrigX + this.qjOrigW * (1 - qjS) / 2;\n"
     "      this._y = this.qjOrigY + this.qjBand;\n"
+    "      this.qjFade();\n"
+    "   }\n"
+    "   function qjFade()\n"
+    "   {\n"
+    "      this._alpha = 0;\n"
+    "      this.onEnterFrame = function()\n"
+    "      {\n"
+    "         this._alpha = Math.min(100,this._alpha + 11);\n"
+    "         if(this._alpha >= 100)\n"
+    "         {\n"
+    "            delete this.onEnterFrame;\n"
+    "         }\n"
+    "      };\n"
     "   }\n"
     "   function completedQuestSort",
     "keep the full list, show one subtab")
@@ -252,7 +265,10 @@ sub("   function handleInput(details, pathToFocus)\n   {\n",
     "         }\n"
     "      }\n",
     "LB/RB and Q/E switch subtabs")
-# 3. the bar lives on the page's parent, so it doesn't fade with the page: hide/show it
+# 3. the scripted transform also freezes the fader's alpha tween (QuestsFader frames 2-10
+#    animate Page_mc alpha 0 -> 100); entering from another tab froze it at ~11% ("dark
+#    overlay"). qjFade runs that fade itself after layout and on every return to the tab.
+# 4. the bar lives on the page's parent, so it doesn't fade with the page: hide/show it
 sub("   function endPage()\n   {\n",
     "   function endPage()\n   {\n"
     "      this._parent.qjTabs._visible = false;\n"
@@ -261,6 +277,10 @@ sub("   function endPage()\n   {\n",
 sub("   function startPage()\n   {\n",
     "   function startPage()\n   {\n"
     "      this._parent.qjTabs._visible = true;\n"
-    "      this._visible = true;\n",
+    "      this._visible = true;\n"
+    "      if(this.qjLaid)\n"
+    "      {\n"
+    "         this.qjFade();\n"
+    "      }\n",
     "show subtab bar and page on the quests tab")
 open(P, "w", encoding="utf-8").write(s)
