@@ -31,7 +31,8 @@ The journal only receives a quest's title, type and state. `plugin/` is a small 
 plugin (`QuestJournalSubtabs.dll`, 1.6.1170) exposing `skse.plugins.QJS.GetQuestInfo(formID)`
 = quest flags | type << 16 | (started by a Story Manager event) << 24, plus
 `GetQuestEvent(formID)` (the event code, e.g. `CLOC`). The rule lives in ActionScript
-(`qjIsRadiant`): instance > 0, or SM event + not Run Once + type Thieves Guild /
+(`qjIsRadiant`): SM event + not Run Once + type Thieves Guild /
 Companions / Favor. Checked against Skyrim.esm: catches TGR*, CR*, BQ*, MGR*, Favor*,
 WE*/WI*; excludes DA*, MS*, Run Once dungeon quests and civil war missions. Without
-the plugin the tab is simply empty.
+the plugin the tab is simply empty. (A quest's journal `instance` is not a radiant
+signal: ordinary quests carry instance > 0 too.)

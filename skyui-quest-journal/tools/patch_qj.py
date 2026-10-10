@@ -4,8 +4,8 @@
   FACTIONS   Mages, Thieves, Dark Brotherhood, Companions, Civil War (types 2-5, 9)
   DAEDRIC    Daedric quests                                          (type 7)
   SIDE       favors, misc-type, the Miscellaneous entry, anything else
-  RADIANT    repeatable radiant quests (guild jobs, bounties, favors): instance > 0, or
-             started by a Story Manager event, not Run Once, type Thieves Guild /
+  RADIANT    repeatable radiant quests (guild jobs, bounties, favors): started
+             by a Story Manager event, not Run Once, type Thieves Guild /
              Companions / Favor. Needs the QuestJournalSubtabs SKSE plugin (skse.plugins.QJS)
 
 Completed quests stay in their category, below a divider after the active ones.
@@ -80,10 +80,7 @@ sub("      this.TitleList.InvalidateData();\n"
     "      {\n"
     "         return false;\n"
     "      }\n"
-    "      if(e.instance > 0)\n"
-    "      {\n"
-    "         return true;\n"
-    "      }\n"
+
     "      if(e.qjInfo == undefined)\n"
     "      {\n"
     "         e.qjInfo = skse.plugins.QJS != undefined ? skse.plugins.QJS.GetQuestInfo(e.formID) : -1;\n"
