@@ -9,7 +9,8 @@ Splits the quest journal's list into subtabs, switched with **LB / RB**
 | FACTIONS | Mages, Thieves Guild, Dark Brotherhood, Companions, Civil War |
 | DAEDRIC | Daedric quests |
 | SIDE | favors, misc-type quests, the Miscellaneous entry, anything else |
-| COMPLETED | completed quests |
+
+Completed quests stay in their category's tab, below a divider after the active ones.
 
 The journal opens on the subtab holding the selected quest. The quest page is shrunk
 to free a band under the journal tabs for the subtab bar.
