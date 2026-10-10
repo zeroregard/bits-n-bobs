@@ -1,8 +1,8 @@
 """Patch SkyUI 6.11 quest_journal.swf: quest subtabs on LB / RB.
 
-  MAIN  main quest, Dawnguard, Dragonborn                      (types 1, 10, 11)
-  SIDE  guilds, Companions, Daedric, Civil War, anything else  (types 2-5, 7, 9, ...)
-  MISC  the Miscellaneous entry, favors, misc-type quests      (formID 0, types 0, 6, 8)
+  MAIN       main quest, Dawnguard, Dragonborn                   (types 1, 10, 11)
+  FACTIONS   Mages, Thieves, Dark Brotherhood, Companions, Civil War (types 2-5, 9)
+  SIDE       Daedric, favors, misc-type, the Miscellaneous entry, anything else
   COMPLETED  completed quests
 
 The quest page is shrunk uniformly to free a band at its top (qjLayout, bottom edge
@@ -54,15 +54,15 @@ sub("      this.TitleList.InvalidateData();\n"
     "      {\n"
     "         return 3;\n"
     "      }\n"
-    "      if(e.formID == 0 || e.type == 0 || e.type == 6 || e.type == 8)\n"
-    "      {\n"
-    "         return 2;\n"
-    "      }\n"
-    "      if(e.type == 1 || e.type == 10 || e.type == 11)\n"
+    "      if(e.formID != 0 && (e.type == 1 || e.type == 10 || e.type == 11))\n"
     "      {\n"
     "         return 0;\n"
     "      }\n"
-    "      return 1;\n"
+    "      if(e.formID != 0 && (e.type == 2 || e.type == 3 || e.type == 4 || e.type == 5 || e.type == 9))\n"
+    "      {\n"
+    "         return 1;\n"
+    "      }\n"
+    "      return 2;\n"
     "   }\n"
     "   function qjApply(keep)\n"
     "   {\n"
@@ -116,22 +116,12 @@ sub("      this.TitleList.InvalidateData();\n"
     "         this.qjTabs.html = true;\n"
     "         this.qjTabs.selectable = false;\n"
     "      }\n"
-    "      var qjNames = [\"MAIN\",\"SIDE\",\"MISC\",\"COMPLETED\"];\n"
-    "      var qjH = \"<p align='center'><font face='$EverywhereMediumFont' size='24'>\";\n"
+    "      var qjNames = [\"MAIN\",\"FACTIONS\",\"SIDE\",\"COMPLETED\"];\n"
+    "      var qjH = \"<p align='center'><font face='$EverywhereMediumFont' size='19'>\";\n"
     "      var qjI = 0;\n"
     "      while(qjI < 4)\n"
     "      {\n"
-    "         var qjN = 0;\n"
-    "         var qjJ = 0;\n"
-    "         while(qjJ < this.qjAll.length)\n"
-    "         {\n"
-    "            if(this.qjTabOf(this.qjAll[qjJ]) == qjI)\n"
-    "            {\n"
-    "               qjN = qjN + 1;\n"
-    "            }\n"
-    "            qjJ = qjJ + 1;\n"
-    "         }\n"
-    "         qjH = qjH + \"<font color='\" + (qjI == this.qjTab ? \"#FFFFFF\" : \"#6E6E6E\") + \"'>\" + qjNames[qjI] + \" \" + qjN + \"</font>    \";\n"
+    "         qjH = qjH + \"<font color='\" + (qjI == this.qjTab ? \"#FFFFFF\" : \"#6E6E6E\") + \"'>\" + qjNames[qjI] + \"</font>      \";\n"
     "         qjI = qjI + 1;\n"
     "      }\n"
     "      this.qjTabs.htmlText = qjH + \"</font></p>\";\n"
@@ -178,4 +168,13 @@ sub("   function handleInput(details, pathToFocus)\n   {\n",
     "         }\n"
     "      }\n",
     "LB/RB and Q/E switch subtabs")
+# 3. the bar lives on the page's parent, so it doesn't fade with the page: hide/show it
+sub("   function endPage()\n   {\n",
+    "   function endPage()\n   {\n"
+    "      this._parent.qjTabs._visible = false;\n",
+    "hide subtab bar on other journal tabs")
+sub("   function startPage()\n   {\n",
+    "   function startPage()\n   {\n"
+    "      this._parent.qjTabs._visible = true;\n",
+    "show subtab bar on the quests tab")
 open(P, "w", encoding="utf-8").write(s)
