@@ -8,9 +8,14 @@ Splits the quest journal's list into subtabs, switched with **LB / RB**
 | MAIN | main quest, Dawnguard, Dragonborn |
 | FACTIONS | Mages, Thieves Guild, Dark Brotherhood, Companions, Civil War |
 | DAEDRIC | Daedric quests |
-| SIDE | favors, misc-type quests, the Miscellaneous entry, anything else |
+| SIDE | favors, misc-type quests, anything else |
+| MISC | one entry per miscellaneous objective, expanded from the Miscellaneous entry |
 
 Completed quests stay in their category's tab, below a divider after the active ones.
+
+Following any MISC entry also turns on the hidden Miscellaneous parent (the vanilla
+"show misc objectives" switch); unfollowing the last one turns it off. If the misc
+objectives can't be loaded, MISC falls back to the single vanilla Miscellaneous entry.
 
 The journal opens on the subtab holding the selected quest. The quest page is shrunk
 to free a band under the journal tabs for the subtab bar.
