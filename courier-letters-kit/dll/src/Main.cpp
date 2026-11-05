@@ -10,10 +10,11 @@
 #include "PCH.h"
 
 #include <filesystem>
+#include <optional>
 
 namespace
 {
-	constexpr auto       kVersion = "CourierLettersKit 1.0.0";
+	constexpr auto       kVersion = "CourierLettersKit 1.1.0";
 	constexpr auto       kPlugin = "CourierLettersKit.esp";
 	constexpr RE::FormID kFirstLetter = 0x801;   // slot 1
 	constexpr int        kSlots = 30;
@@ -98,32 +99,53 @@ namespace
 
 	enum class Place { kOutdoors, kIndoors, kAnywhere };
 
+	// One condition: one entry of a condition line ("QuestCompleted = MQ104, !MQ105" is two). A "!" before an entry turns
+	// it around. Race and Name are the exception: their line is one condition (one of its plain entries, none of its "!" ones).
+	enum class Kind { kSex, kRace, kName, kMinLevel, kMaxLevel, kMinDays, kAfterLetter, kQuestDone, kQuestStage, kFaction, kGlobal, kHasItem, kHours };
+
+	struct Cond
+	{
+		Kind                     kind = Kind::kSex;
+		bool                     neg = false;
+		int                      a = 0, b = 0;   // sex; level; letter slot; quest stage; item count; hours from, to
+		float                    f = 0.f;        // days passed; global value; days after the letter (below 0: AfterLetterDays)
+		RE::TESForm*             form = nullptr;
+		std::vector<std::string> any, none;      // race / name, lower case: one of these, none of those
+		std::string              text;           // as written ("QuestCompleted = !MQ105"), for Explain
+	};
+
+	// Condition lines. In the letter's own conditions every line must hold; in an [Any] section at least one line must.
+	// Within a line, every entry must hold.
+	struct Group
+	{
+		std::vector<std::vector<Cond>> lines;
+		float                          afterDays = -1.f;   // AfterLetterDays given in this section (below 0: none)
+	};
+
 	struct Letter
 	{
-		std::string file;
-		int         slot = 0;
-		bool        enabled = true;
-		std::string title = "Letter";
-		std::string text;
-		int         sex = -1;   // -1 any, 0 male, 1 female
-		std::vector<std::string> races, names;
-		int         minLevel = 0, maxLevel = 0;
-		float       minDays = 0.f;
-		int         afterLetter = 0;
-		float       afterDays = 0.f;
-		std::vector<RE::TESQuest*>                       questsDone;
-		std::vector<std::pair<RE::TESQuest*, int>>       questStages;
-		std::vector<RE::TESFaction*>                     factions;
-		std::vector<std::pair<RE::TESGlobal*, float>>    globals;
-		std::vector<std::pair<RE::TESBoundObject*, int>> hasItems, items;
-		int         hourFrom = -1, hourTo = -1;
-		Place       place = Place::kOutdoors;
-		bool        inCombat = false;
+		std::string        file;
+		int                slot = 0;
+		bool               enabled = true;
+		std::string        title = "Letter";
+		std::string        text;
+		Group              all;   // conditions outside [Any] sections
+		std::vector<Group> any;   // one per [Any] section
+		std::vector<std::pair<RE::TESBoundObject*, int>> items;
+		Place              place = Place::kOutdoors;
+		bool               inCombat = false;
 		std::vector<std::string> problems;
 	};
 
 	std::mutex                g_lock;
 	std::map<int, Letter>     g_letters;   // by slot
+
+	// "!x" -> (true, "x")
+	std::pair<bool, std::string> Negated(const std::string& s)
+	{
+		if (!s.empty() && s[0] == '!') return { true, Trim(s.substr(1)) };
+		return { false, s };
+	}
 
 	Letter ParseFile(const std::filesystem::path& p)
 	{
@@ -132,7 +154,9 @@ namespace
 		std::ifstream in(p, std::ios::binary);
 		std::string   line, text;
 		bool          inText = false, first = true;
+		int           anyIndex = -1;   // the [Any] section being read, -1 outside one
 		auto          bad = [&](const std::string& why) { L.problems.push_back(why); };
+		auto          scope = [&]() -> Group& { return anyIndex < 0 ? L.all : L.any[anyIndex]; };
 		while (std::getline(in, line)) {
 			if (first && line.size() >= 3 && static_cast<unsigned char>(line[0]) == 0xEF) line = line.substr(3);   // UTF-8 BOM
 			first = false;
@@ -144,79 +168,165 @@ namespace
 			}
 			if (t.empty() || t[0] == ';' || t[0] == '#') continue;
 			if (Lower(t) == "[text]") { inText = true; continue; }
-			if (t[0] == '[') continue;   // [Letter], [Conditions], [Enclosures]: only for reading
+			if (t[0] == '[') {   // [Any] starts a group of alternatives; the others ([Letter], [Conditions], ...) are only for reading
+				const auto close = t.find(']');
+				if (Lower(Trim(t.substr(1, close == std::string::npos ? std::string::npos : close - 1))) == "any") {
+					L.any.emplace_back();
+					anyIndex = static_cast<int>(L.any.size()) - 1;
+				} else
+					anyIndex = -1;
+				continue;
+			}
 			const auto eq = t.find('=');
 			if (eq == std::string::npos) { bad("not a key = value line: " + t); continue; }
-			const auto key = Lower(Trim(t.substr(0, eq)));
+			const auto rawKey = Trim(t.substr(0, eq));
+			const auto key = Lower(rawKey);
 			const auto val = Trim(t.substr(eq + 1));
-			auto       num = [&](auto& out) {
-                try {
-                    out = static_cast<std::remove_reference_t<decltype(out)>>(std::stod(val));
-                } catch (...) {
-                    bad(key + ": not a number: " + val);
-                }
+			const bool inAny = anyIndex >= 0;
+			auto       num = [&](const std::string& v, auto& out) {
+				try {
+					out = static_cast<std::remove_reference_t<decltype(out)>>(std::stod(v));
+					return true;
+				} catch (...) {
+					bad(rawKey + ": not a number: " + v);
+					return false;
+				}
 			};
-			if (key == "slot") num(L.slot);
-			else if (key == "enabled") L.enabled = !(Lower(val) == "false" || val == "0" || Lower(val) == "no");
-			else if (key == "title") L.title = val;
-			else if (key == "text") { auto v = val; ReplaceAll(v, "\\n", "\n"); text += v + "\n"; }
-			else if (key == "sex") {
-				const auto v = Lower(val);
-				L.sex = v == "female" ? 1 : v == "male" ? 0 : v == "any" || v.empty() ? -1 : (bad("sex: Any, Female or Male"), -1);
-			} else if (key == "race") for (auto& r : Split(val, ',')) L.races.push_back(Lower(r));
-			else if (key == "name") for (auto& n : Split(val, ',')) L.names.push_back(Lower(n));
-			else if (key == "minlevel") num(L.minLevel);
-			else if (key == "maxlevel") num(L.maxLevel);
-			else if (key == "mindayspassed") num(L.minDays);
-			else if (key == "afterletter") num(L.afterLetter);
-			else if (key == "afterletterdays") num(L.afterDays);
-			else if (key == "questcompleted") {
-				for (auto& q : Split(val, ','))
-					if (auto* f = ParseForm(q); f && f->As<RE::TESQuest>()) L.questsDone.push_back(f->As<RE::TESQuest>());
-					else bad("QuestCompleted: no quest " + q);
-			} else if (key == "queststage") {
-				for (auto& q : Split(val, ',')) {
-					RE::TESForm* f = nullptr; float n = 0;
-					if (ParseFormNumber(q, 0, f, n) && f->As<RE::TESQuest>()) L.questStages.push_back({ f->As<RE::TESQuest>(), static_cast<int>(n) });
-					else bad("QuestStage: no quest in " + q);
-				}
-			} else if (key == "faction") {
-				for (auto& q : Split(val, ','))
-					if (auto* f = ParseForm(q); f && f->As<RE::TESFaction>()) L.factions.push_back(f->As<RE::TESFaction>());
-					else bad("Faction: no faction " + q + " (by editor ID only with powerofthree's Tweaks; Plugin.esp|0xID always works)");
-			} else if (key == "global") {
+			auto letterWide = [&] {   // a key that isn't a condition, inside an [Any] section
+				if (inAny) bad(rawKey + " is not a condition: it applies to the whole letter, not to its [Any] section");
+			};
+			auto noNot = [&] {
+				if (!val.empty() && val[0] == '!') bad(rawKey + ": '!' doesn't apply here, ignored");
+			};
+			std::vector<Cond> conds;   // this line's conditions
+			auto cond = [&](Kind k, const std::string& entry, std::string& rest) -> Cond& {
+				auto [neg, r] = Negated(entry);
+				rest = r;
+				auto& c = conds.emplace_back();
+				c.kind = k, c.neg = neg, c.text = rawKey + " = " + entry;
+				return c;
+			};
+			std::string v;
+			if (key == "slot") letterWide(), num(val, L.slot);
+			else if (key == "enabled") letterWide(), L.enabled = !(Lower(val) == "false" || val == "0" || Lower(val) == "no");
+			else if (key == "title") letterWide(), L.title = val;
+			else if (key == "text") { letterWide(); auto s = val; ReplaceAll(s, "\\n", "\n"); text += s + "\n"; }
+			else if (key == "place") {
+				letterWide();
+				const auto s = Lower(val);
+				L.place = s == "indoors" ? Place::kIndoors : s == "anywhere" ? Place::kAnywhere : Place::kOutdoors;
+				if (s != "indoors" && s != "anywhere" && s != "outdoors") bad("Place: Outdoors, Indoors or Anywhere");
+			} else if (key == "incombat") letterWide(), L.inCombat = Lower(val) == "true" || val == "1" || Lower(val) == "yes";
+			else if (key == "item") {
+				letterWide(), noNot();
 				for (auto& q : Split(val, ',')) {
 					RE::TESForm* f = nullptr; float n = 1;
-					if (ParseFormNumber(q, 1, f, n) && f->As<RE::TESGlobal>()) L.globals.push_back({ f->As<RE::TESGlobal>(), n });
-					else bad("Global: no global in " + q);
-				}
-			} else if (key == "hasitem" || key == "item") {
-				for (auto& q : Split(val, ',')) {
-					RE::TESForm* f = nullptr; float n = 1;
-					if (ParseFormNumber(q, 1, f, n) && f->As<RE::TESBoundObject>())
-						(key == "item" ? L.items : L.hasItems).push_back({ f->As<RE::TESBoundObject>(), std::max(1, static_cast<int>(n)) });
-					else bad((key == "item" ? "Item" : "HasItem") + std::string(": no item ") + q);
+					if (ParseFormNumber(Negated(q).second, 1, f, n) && f->As<RE::TESBoundObject>()) L.items.push_back({ f->As<RE::TESBoundObject>(), std::max(1, static_cast<int>(n)) });
+					else bad("Item: no item " + q);
 				}
 			} else if (key == "gold") {
-				int g = 0; num(g);
+				letterWide(), noNot();
+				int g = 0; num(Negated(val).second, g);
 				if (g > 0)
 					if (auto* f = RE::TESForm::LookupByID<RE::TESBoundObject>(kGold)) L.items.push_back({ f, g });
+			} else if (key == "afterletterdays") {
+				noNot();
+				num(Negated(val).second, scope().afterDays);
+			} else if (key == "sex") {
+				auto& c = cond(Kind::kSex, val, v);
+				const auto s = Lower(v);
+				if (s == "female" || s == "male") c.a = s == "female" ? 1 : 0;
+				else {
+					if (s != "any" && !s.empty()) bad("Sex: Any, Female or Male");
+					conds.pop_back();
+				}
+			} else if (key == "race" || key == "name") {
+				const auto k = key == "race" ? Kind::kRace : Kind::kName;
+				Cond c;
+				c.kind = k, c.text = rawKey + " = " + val;
+				for (auto& e : Split(val, ',')) {
+					auto [neg, r] = Negated(e);
+					(neg ? c.none : c.any).push_back(Lower(r));
+				}
+				Cond* into = nullptr;   // outside [Any], all Race (Name) lines are one list, as they always were
+				if (!inAny)
+					for (auto& l : L.all.lines)
+						for (auto& o : l)
+							if (o.kind == k) into = &o;
+				if (into) {
+					into->any.insert(into->any.end(), c.any.begin(), c.any.end());
+					into->none.insert(into->none.end(), c.none.begin(), c.none.end());
+					into->text += ", " + val;
+				} else if (!c.any.empty() || !c.none.empty())
+					conds.push_back(std::move(c));
+			} else if (key == "minlevel" || key == "maxlevel") {
+				auto& c = cond(key == "minlevel" ? Kind::kMinLevel : Kind::kMaxLevel, val, v);
+				if (!num(v, c.a) || c.a <= 0) conds.pop_back();   // 0: no limit
+			} else if (key == "mindayspassed") {
+				auto& c = cond(Kind::kMinDays, val, v);
+				if (!num(v, c.f)) conds.pop_back();
+			} else if (key == "afterletter") {
+				for (auto& e : Split(val, ',')) {   // "SLOT" or "SLOT DAYS"
+					auto&              c = cond(Kind::kAfterLetter, e, v);
+					std::istringstream s(v);
+					c.f = -1.f;
+					if (!(s >> c.a) || c.a < 1 || c.a > kSlots) { bad("AfterLetter: a slot, 1 to " + std::to_string(kSlots) + ": " + e); conds.pop_back(); continue; }
+					if (float d; s >> d) c.f = d;
+				}
+			} else if (key == "questcompleted" || key == "faction") {
+				const bool quest = key == "questcompleted";
+				for (auto& e : Split(val, ',')) {
+					auto& c = cond(quest ? Kind::kQuestDone : Kind::kFaction, e, v);
+					c.form = ParseForm(v);
+					if (quest ? !(c.form && c.form->As<RE::TESQuest>()) : !(c.form && c.form->As<RE::TESFaction>())) {
+						bad(quest ? "QuestCompleted: no quest " + v
+								  : "Faction: no faction " + v + " (by editor ID only with powerofthree's Tweaks; Plugin.esp|0xID always works)");
+						conds.pop_back();
+					}
+				}
+			} else if (key == "queststage" || key == "global" || key == "hasitem") {
+				const auto k = key == "queststage" ? Kind::kQuestStage : key == "global" ? Kind::kGlobal : Kind::kHasItem;
+				for (auto& e : Split(val, ',')) {
+					auto& c = cond(k, e, v);
+					float n = 0;
+					const bool ok = ParseFormNumber(v, k == Kind::kQuestStage ? 0.f : 1.f, c.form, n) &&
+					                (k == Kind::kQuestStage ? c.form->As<RE::TESQuest>() != nullptr
+									: k == Kind::kGlobal    ? c.form->As<RE::TESGlobal>() != nullptr
+															: c.form->As<RE::TESBoundObject>() != nullptr);
+					if (!ok) {
+						bad(rawKey + (k == Kind::kQuestStage ? ": no quest in " : k == Kind::kGlobal ? ": no global in " : ": no item ") + v);
+						conds.pop_back();
+						continue;
+					}
+					if (k == Kind::kGlobal) c.f = n;
+					else c.a = k == Kind::kHasItem ? std::max(1, static_cast<int>(n)) : static_cast<int>(n);
+				}
 			} else if (key == "hours") {
-				const auto parts = Split(val, '-');
+				auto&      c = cond(Kind::kHours, val, v);
+				const auto parts = Split(v, '-');
 				try {
-					if (parts.size() == 2) L.hourFrom = std::stoi(parts[0]), L.hourTo = std::stoi(parts[1]);
-					else bad("Hours: like 18-6");
-				} catch (...) { bad("Hours: like 18-6"); }
-			} else if (key == "place") {
-				const auto v = Lower(val);
-				L.place = v == "indoors" ? Place::kIndoors : v == "anywhere" ? Place::kAnywhere : Place::kOutdoors;
-				if (v != "indoors" && v != "anywhere" && v != "outdoors") bad("Place: Outdoors, Indoors or Anywhere");
-			} else if (key == "incombat") L.inCombat = Lower(val) == "true" || val == "1" || Lower(val) == "yes";
-			else bad("unknown key: " + key);
+					if (parts.size() != 2) throw std::invalid_argument("");
+					c.a = std::stoi(parts[0]), c.b = std::stoi(parts[1]);
+				} catch (...) {
+					bad("Hours: like 18-6");
+					conds.pop_back();
+				}
+			} else bad("unknown key: " + rawKey);
+			if (!conds.empty()) scope().lines.push_back(std::move(conds));
 		}
 		while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
 		L.text = text;
 		if (L.slot < 1 || L.slot > kSlots) bad("Slot must be 1 to " + std::to_string(kSlots));
+		for (std::size_t g = 0; g < L.any.size(); ++g)
+			if (L.any[g].lines.empty()) bad("[Any] section " + std::to_string(g + 1) + " has no conditions; ignored");
+		std::erase_if(L.any, [](const Group& g) { return g.lines.empty(); });
+		auto own = [&](const Group& g) {
+			for (auto& l : g.lines)
+				for (auto& c : l)
+					if (c.kind == Kind::kAfterLetter && !c.neg && c.a == L.slot) bad(c.text + ": its own slot, so it never comes");
+		};
+		own(L.all);
+		for (auto& g : L.any) own(g);
 		return L;
 	}
 
@@ -255,7 +365,8 @@ namespace
 			for (auto& p : L.problems) logger::warn("{}: {}", L.file, p);
 			if (L.slot < 1 || L.slot > kSlots) { logger::warn("{}: skipped (no valid Slot)", L.file); continue; }
 			if (letters.contains(L.slot)) { logger::warn("{}: skipped, slot {} is already {}'s", L.file, L.slot, letters[L.slot].file); continue; }
-			logger::info("letter {}: '{}' ({}){}, {} enclosure(s)", L.slot, L.title, L.file, L.enabled ? "" : " - disabled", L.items.size());
+			logger::info("letter {}: '{}' ({}){}, {} condition line(s), {} [Any] section(s), {} enclosure(s)", L.slot, L.title, L.file,
+				L.enabled ? "" : " - disabled", L.all.lines.size(), L.any.size(), L.items.size());
 			letters[L.slot] = std::move(L);
 		}
 		if (ec) logger::warn("no folder {} ({})", kFolder, ec.message());
@@ -271,52 +382,97 @@ namespace
 			if (auto* b = SlotBook(slot)) b->SetFullName(Fill(L.title).c_str());
 	}
 
+	using InventoryCounts = decltype(std::declval<RE::PlayerCharacter&>().GetInventoryCounts());
+
+	struct Context
+	{
+		RE::PlayerCharacter*           pc;
+		RE::Calendar*                  cal;
+		float                          now;
+		const std::vector<float>&      delivered;
+		float                          afterDays;   // the AfterLetterDays that applies
+		std::optional<InventoryCounts> inventory;   // read once, when a HasItem asks
+	};
+
+	bool Test(const Cond& c, Context& x)
+	{
+		auto* pc = x.pc;
+		if (c.kind == Kind::kRace || c.kind == Kind::kName) {
+			std::string a, b;   // what the entries are compared with
+			if (c.kind == Kind::kName) a = Lower(pc->GetName());
+			else if (auto* race = pc->GetRace()) {
+				a = Lower(race->GetName());
+				b = race->GetFormEditorID() ? Lower(race->GetFormEditorID()) : "";
+			}
+			auto is = [&](const std::string& e) { return e == a || (!b.empty() && e == b); };
+			return (c.any.empty() || std::ranges::any_of(c.any, is)) && std::ranges::none_of(c.none, is);
+		}
+		bool r = false;
+		switch (c.kind) {
+		case Kind::kSex: {
+			auto* base = pc->GetActorBase();
+			r = base && static_cast<int>(base->GetSex()) == c.a;
+			break;
+		}
+		case Kind::kMinLevel: r = pc->GetLevel() >= c.a; break;
+		case Kind::kMaxLevel: r = pc->GetLevel() <= c.a; break;
+		case Kind::kMinDays: r = x.now >= c.f; break;
+		case Kind::kAfterLetter: {
+			const auto i = static_cast<std::size_t>(c.a - 1);
+			const float days = c.f >= 0.f ? c.f : x.afterDays;
+			r = i < x.delivered.size() && x.delivered[i] >= 0.f && x.now - x.delivered[i] >= days;
+			break;
+		}
+		case Kind::kQuestDone: r = c.form->As<RE::TESQuest>()->IsCompleted(); break;
+		case Kind::kQuestStage: {
+			auto* q = c.form->As<RE::TESQuest>();
+			r = q->IsCompleted() || q->GetCurrentStageID() >= c.a;
+			break;
+		}
+		case Kind::kFaction: r = pc->IsInFaction(c.form->As<RE::TESFaction>()); break;
+		case Kind::kGlobal: r = c.form->As<RE::TESGlobal>()->value >= c.f; break;
+		case Kind::kHasItem: {
+			if (!x.inventory) x.inventory = pc->GetInventoryCounts();
+			const auto it = x.inventory->find(c.form->As<RE::TESBoundObject>());
+			r = it != x.inventory->end() && it->second >= c.a;
+			break;
+		}
+		case Kind::kHours: {
+			const int h = static_cast<int>(x.cal->GetHour());
+			r = c.a <= c.b ? (h >= c.a && h < c.b) : (h >= c.a || h < c.b);
+			break;
+		}
+		default: break;
+		}
+		return r != c.neg;
+	}
+
 	bool Holds(const Letter& L, const std::vector<float>& delivered, std::string& why)
 	{
 		auto* pc = RE::PlayerCharacter::GetSingleton();
 		auto* cal = RE::Calendar::GetSingleton();
 		if (!pc || !cal) return why = "no player", false;
-		const float now = cal->GetDaysPassed();
 		if (!L.inCombat && pc->IsInCombat()) return why = "in combat", false;
 		if (auto* cell = pc->GetParentCell(); cell && L.place != Place::kAnywhere) {
 			if (L.place == Place::kOutdoors && cell->IsInteriorCell()) return why = "indoors", false;
 			if (L.place == Place::kIndoors && !cell->IsInteriorCell()) return why = "outdoors", false;
 		}
-		if (L.sex >= 0) {
-			auto* base = pc->GetActorBase();
-			if (!base || static_cast<int>(base->GetSex()) != L.sex) return why = "sex", false;
-		}
-		if (!L.races.empty()) {
-			auto*       race = pc->GetRace();
-			const auto  name = race ? Lower(race->GetName()) : "";
-			const auto  edid = race && race->GetFormEditorID() ? Lower(race->GetFormEditorID()) : "";
-			if (std::ranges::none_of(L.races, [&](auto& r) { return r == name || r == edid; })) return why = "race", false;
-		}
-		if (!L.names.empty() && std::ranges::none_of(L.names, [&](auto& n) { return n == Lower(pc->GetName()); })) return why = "name", false;
-		const int level = pc->GetLevel();
-		if (level < L.minLevel || (L.maxLevel > 0 && level > L.maxLevel)) return why = "level", false;
-		if (now < L.minDays) return why = "days passed", false;
-		if (L.afterLetter > 0) {
-			const auto i = static_cast<std::size_t>(L.afterLetter - 1);
-			if (i >= delivered.size() || delivered[i] < 0.f || now - delivered[i] < L.afterDays) return why = "after letter", false;
-		}
-		for (auto* q : L.questsDone)
-			if (!q->IsCompleted()) return why = "quest not completed", false;
-		for (auto& [q, stage] : L.questStages)
-			if (!q->IsCompleted() && q->GetCurrentStageID() < stage) return why = "quest stage", false;
-		for (auto* f : L.factions)
-			if (!pc->IsInFaction(f)) return why = "faction", false;
-		for (auto& [g, v] : L.globals)
-			if (g->value < v) return why = "global", false;
-		if (!L.hasItems.empty()) {
-			auto inv = pc->GetInventoryCounts();
-			for (auto& [obj, n] : L.hasItems)
-				if (auto it = inv.find(obj); it == inv.end() || it->second < n) return why = "item", false;
-		}
-		if (L.hourFrom >= 0) {
-			const int h = static_cast<int>(cal->GetHour());
-			const bool in = L.hourFrom <= L.hourTo ? (h >= L.hourFrom && h < L.hourTo) : (h >= L.hourFrom || h < L.hourTo);
-			if (!in) return why = "hour", false;
+		const float letterDays = std::max(0.f, L.all.afterDays);
+		Context     x{ pc, cal, cal->GetDaysPassed(), delivered, letterDays, std::nullopt };
+		for (auto& line : L.all.lines)
+			for (auto& c : line)
+				if (!Test(c, x)) return why = c.text, false;
+		for (std::size_t g = 0; g < L.any.size(); ++g) {
+			const auto& group = L.any[g];
+			x.afterDays = group.afterDays >= 0.f ? group.afterDays : letterDays;
+			std::string failed;   // the first entry that fails, of each line
+			bool        some = false;
+			for (auto& line : group.lines) {
+				const auto it = std::ranges::find_if(line, [&](const Cond& c) { return !Test(c, x); });
+				if (it == line.end()) { some = true; break; }
+				failed += (failed.empty() ? "" : "; ") + it->text;
+			}
+			if (!some) return why = "[Any] " + std::to_string(g + 1) + ": none of " + failed, false;
 		}
 		return true;
 	}
